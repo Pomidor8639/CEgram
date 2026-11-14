@@ -78,6 +78,22 @@ static void set_status(const TCHAR *text) {
     }
 }
 
+static void get_app_dir_file(const char *filename, char *out_path, size_t max_len) {
+    TCHAR mod_path[MAX_PATH];
+    char mod_path_a[MAX_PATH];
+    char *last_sep;
+    GetModuleFileName(NULL, mod_path, MAX_PATH);
+    tchar_to_char(mod_path, mod_path_a, sizeof(mod_path_a));
+    last_sep = strrchr(mod_path_a, '\\');
+    if (!last_sep) last_sep = strrchr(mod_path_a, '/');
+    if (last_sep) {
+        *(last_sep + 1) = '\0';
+        snprintf(out_path, max_len, "%s%s", mod_path_a, filename);
+    } else {
+        snprintf(out_path, max_len, "%s", filename);
+    }
+}
+
 static int init_network_and_handshake(int dc_id) {
     const cegram_dc_info_t *dc = cegram_get_dc_info(dc_id);
     int res;
@@ -91,6 +107,8 @@ static int init_network_and_handshake(int dc_id) {
     const cegram_rsa_key_t *matched_key = NULL;
     size_t i;
     char sess_file[64];
+    char app_sess[MAX_PATH];
+    char app_sess_main[MAX_PATH];
 
     if (!dc) return CEGRAM_ERR_GENERIC;
 
@@ -106,8 +124,12 @@ static int init_network_and_handshake(int dc_id) {
     g_network_connected = 1;
 
     snprintf(sess_file, sizeof(sess_file), "session_dc%d.dat", dc_id);
-    if (cegram_session_load(&g_session, sess_file) == CEGRAM_OK ||
-        (dc_id == 2 && cegram_session_load(&g_session, "session.dat") == CEGRAM_OK)) {
+    get_app_dir_file(sess_file, app_sess, sizeof(app_sess));
+    get_app_dir_file("session.dat", app_sess_main, sizeof(app_sess_main));
+    if (cegram_session_load(&g_session, app_sess) == CEGRAM_OK ||
+        cegram_session_load(&g_session, sess_file) == CEGRAM_OK ||
+        (dc_id == 2 && (cegram_session_load(&g_session, app_sess_main) == CEGRAM_OK ||
+                        cegram_session_load(&g_session, "session.dat") == CEGRAM_OK))) {
         cegram_random_bytes((uint8_t *)&g_session.session_id, 8);
         g_session.seq_no = 0;
         return CEGRAM_OK;
@@ -141,8 +163,14 @@ static int init_network_and_handshake(int dc_id) {
     res = cegram_mtproto_complete_dh(&g_transport, nonce, respq.server_nonce, new_nonce, &server_dh_inner, &g_session);
     if (res != CEGRAM_OK) return res;
 
+    get_app_dir_file(sess_file, app_sess, sizeof(app_sess));
+    cegram_session_save(&g_session, app_sess);
     cegram_session_save(&g_session, sess_file);
-    if (dc_id == 2) cegram_session_save(&g_session, "session.dat");
+    if (dc_id == 2) {
+        get_app_dir_file("session.dat", app_sess_main, sizeof(app_sess_main));
+        cegram_session_save(&g_session, app_sess_main);
+        cegram_session_save(&g_session, "session.dat");
+    }
 
     return CEGRAM_OK;
 }
@@ -448,6 +476,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
                 res = cegram_auth_sign_in(&g_transport, &g_session, g_saved_phone, g_phone_code_hash, code_utf8, &user, &err);
                 if (res == CEGRAM_OK) {
+                    char app_sess_main[MAX_PATH];
+                    get_app_dir_file("session.dat", app_sess_main, sizeof(app_sess_main));
+                    cegram_session_save(&g_session, app_sess_main);
                     cegram_session_save(&g_session, "session.dat");
                     g_logged_in = 1;
                     show_login_view(0);
@@ -471,6 +502,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             } else if (wmId == IDC_CHAT_REFRESH_BTN) {
                 load_dialogs();
             } else if (wmId == IDC_CHAT_LOGOUT_BTN) {
+                char app_sess_main[MAX_PATH];
+                TCHAR app_sess_w[MAX_PATH];
+                get_app_dir_file("session.dat", app_sess_main, sizeof(app_sess_main));
+                char_to_tchar(app_sess_main, app_sess_w, MAX_PATH);
+                DeleteFile(app_sess_w);
                 DeleteFile(TEXT("session.dat"));
                 g_logged_in = 0;
                 show_chat_view(0);
