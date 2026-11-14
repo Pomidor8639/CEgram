@@ -1,6 +1,5 @@
 #include "cegram/rsa_keys.h"
 
-/* Known Telegram Production RSA Public Keys */
 static const cegram_rsa_key_t g_telegram_rsa_keys[] = {
     {
         0xC3B42B026CE86B21ULL,

@@ -23,7 +23,7 @@ int main(void) {
     uint64_t pq_val = 0;
     uint32_t p = 0, q = 0;
     const cegram_rsa_key_t *matched_key = NULL;
-    const char *dc_ip = "149.154.167.50"; /* Telegram DC2 */
+    const char *dc_ip = "149.154.167.50";
     uint16_t dc_port = 443;
     int res;
     size_t i;
@@ -56,7 +56,6 @@ int main(void) {
     }
     printf("[+] Connected successfully!\n");
 
-    /* --- STEP 1: req_pq_multi --- */
     printf("[*] Sending req_pq_multi unencrypted MTProto packet...\n");
     res = cegram_mtproto_send_req_pq_multi(&transport, nonce, &respq);
     if (res != CEGRAM_OK) {
@@ -70,13 +69,11 @@ int main(void) {
     print_hex("    Server Nonce", respq.server_nonce, sizeof(respq.server_nonce));
     print_hex("    PQ Bytes", respq.pq, respq.pq_len);
 
-    /* Convert pq bytes (big-endian) to uint64 */
     for (i = 0; i < respq.pq_len; ++i) {
         pq_val = (pq_val << 8) | respq.pq[i];
     }
     printf("    PQ Value: %llu (0x%llX)\n", (unsigned long long)pq_val, (unsigned long long)pq_val);
 
-    /* --- Factorize PQ using Pollard's rho --- */
     printf("[*] Factorizing PQ using Pollard's rho algorithm...\n");
     if (cegram_factorize_pq(pq_val, &p, &q) != CEGRAM_OK) {
         printf("[!] Failed to factorize PQ!\n");
@@ -86,7 +83,6 @@ int main(void) {
     }
     printf("[+] Factored successfully: P = %u (0x%08X), Q = %u (0x%08X)\n", p, p, q, q);
 
-    /* --- Match RSA Key --- */
     printf("[*] Matching Telegram Server RSA Fingerprints...\n");
     for (i = 0; i < respq.fingerprint_count; ++i) {
         matched_key = cegram_find_rsa_key(respq.fingerprints[i]);
@@ -104,7 +100,6 @@ int main(void) {
         return 1;
     }
 
-    /* --- STEP 2: req_DH_params --- */
     print_hex("[*] Generated Client New Nonce", new_nonce, sizeof(new_nonce));
     printf("[*] Encrypting p_q_inner_data_dc with RSA-2048 and sending req_DH_params...\n");
     res = cegram_mtproto_send_req_dh_params(&transport,
@@ -114,7 +109,7 @@ int main(void) {
                                            p, q,
                                            respq.pq, respq.pq_len,
                                            matched_key,
-                                           2, /* DC2 */
+                                           2,
                                            &server_dh);
     if (res != CEGRAM_OK) {
         printf("[!] Failed to complete req_DH_params (error: %d).\n", res);

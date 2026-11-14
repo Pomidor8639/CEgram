@@ -28,10 +28,8 @@ typedef struct {
     size_t encrypted_answer_len;
 } cegram_server_dh_params_ok_t;
 
-/* Send req_pq_multi and receive resPQ from connected DC */
 int cegram_mtproto_send_req_pq_multi(cegram_transport_t *t, const uint8_t nonce[16], cegram_respq_t *out_respq);
 
-/* Send req_DH_params and receive server_DH_params_ok */
 int cegram_mtproto_send_req_dh_params(cegram_transport_t *t,
                                       const uint8_t nonce[16],
                                       const uint8_t server_nonce[16],
@@ -42,4 +40,4 @@ int cegram_mtproto_send_req_dh_params(cegram_transport_t *t,
                                       int dc_id,
                                       cegram_server_dh_params_ok_t *out_dh);
 
-#endif /* CEGRAM_MTPROTO_H */
+#endif

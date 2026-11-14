@@ -18,7 +18,7 @@ void cegram_transport_cleanup(void) {
 
 int cegram_transport_connect(cegram_transport_t *t, const char *ip, uint16_t port) {
     struct sockaddr_in server_addr;
-    uint8_t handshake_byte = 0xef; /* Abridged transport handshake */
+    uint8_t handshake_byte = 0xef;
 
     if (!t) return CEGRAM_ERR_GENERIC;
 
@@ -27,7 +27,6 @@ int cegram_transport_connect(cegram_transport_t *t, const char *ip, uint16_t por
         return CEGRAM_ERR_NETWORK;
     }
 
-    /* Set timeout: 10 seconds */
 #if defined(CEGRAM_PLATFORM_WINCE) || defined(CEGRAM_PLATFORM_WIN32)
     DWORD timeout = 10000;
     setsockopt(t->sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
@@ -55,7 +54,6 @@ int cegram_transport_connect(cegram_transport_t *t, const char *ip, uint16_t por
         return CEGRAM_ERR_NETWORK;
     }
 
-    /* Send Abridged initial handshake byte */
     if (send(t->sock, (const char *)&handshake_byte, 1, 0) != 1) {
         cegram_transport_disconnect(t);
         return CEGRAM_ERR_NETWORK;
@@ -145,13 +143,12 @@ int cegram_transport_recv(cegram_transport_t *t, uint8_t *buf, size_t max_len, s
         }
         words = (size_t)len_bytes[0] | ((size_t)len_bytes[1] << 8) | ((size_t)len_bytes[2] << 16);
     } else {
-        /* Error from Telegram DC (e.g. 404 or protocol error) */
         return CEGRAM_ERR_NETWORK;
     }
 
     payload_len = words * 4;
     if (payload_len > max_len) {
-        return CEGRAM_ERR_GENERIC; /* Buffer too small */
+        return CEGRAM_ERR_GENERIC;
     }
 
     if (recv_all(t->sock, buf, payload_len) != CEGRAM_OK) {

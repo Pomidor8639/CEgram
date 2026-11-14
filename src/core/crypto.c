@@ -40,7 +40,6 @@ uint64_t cegram_generate_message_id(void) {
     return (sec << 32) | ((uint64_t)(counter & 0xFFFFFFFC));
 }
 
-/* --- SHA-1 Implementation --- */
 #define rol(value, bits) (((value) << (bits)) | ((value) >> (32 - (bits))))
 
 static void sha1_transform(uint32_t state[5], const uint8_t buffer[64]) {
@@ -117,7 +116,6 @@ void cegram_sha1(const uint8_t *data, size_t len, uint8_t out[20]) {
     }
 }
 
-/* --- Pollard's Rho PQ Factorization --- */
 static uint64_t gcd64(uint64_t a, uint64_t b) {
     while (b != 0) {
         uint64_t t = b;
@@ -160,7 +158,6 @@ int cegram_factorize_pq(uint64_t pq, uint32_t *out_p, uint32_t *out_q) {
     }
 
     if (d == 1 || d == pq) {
-        /* Retry with different initial constant */
         c = 3; x = 2; y = 2; d = 1; iter = 0;
         while (d == 1 && iter++ < 1000000) {
             x = (mulmod64(x, x, pq) + c) % pq;
@@ -186,7 +183,6 @@ int cegram_factorize_pq(uint64_t pq, uint32_t *out_p, uint32_t *out_q) {
     return CEGRAM_ERR_CRYPTO;
 }
 
-/* --- RSA Encryption with Custom MTProto Padding (255 -> 256 bytes) --- */
 int cegram_rsa_encrypt_pad(const uint8_t *inner_data, size_t inner_len,
                            const cegram_rsa_key_t *key, uint8_t out_encrypted[256]) {
     uint8_t data_with_hash[255];
@@ -200,10 +196,8 @@ int cegram_rsa_encrypt_pad(const uint8_t *inner_data, size_t inner_len,
         return CEGRAM_ERR_GENERIC;
     }
 
-    /* 1. Calculate SHA-1 of inner_data */
     cegram_sha1(inner_data, inner_len, sha1_hash);
 
-    /* 2. Assemble data_with_hash = sha1(inner_data) + inner_data + random_padding */
     memcpy(data_with_hash, sha1_hash, 20);
     memcpy(data_with_hash + 20, inner_data, inner_len);
 
@@ -214,7 +208,6 @@ int cegram_rsa_encrypt_pad(const uint8_t *inner_data, size_t inner_len,
         }
     }
 
-    /* 3. Modular exponentiation c = (m ^ e) mod n */
     mpz_init(m);
     mpz_init(e);
     mpz_init(n);
@@ -229,7 +222,6 @@ int cegram_rsa_encrypt_pad(const uint8_t *inner_data, size_t inner_len,
 
     mpz_powm(c, m, e, n);
 
-    /* 4. Export 256 bytes (big-endian) */
     memset(out_encrypted, 0, 256);
     mpz_export(temp, &written, 1, 1, 1, 0, c);
     if (written <= 256) {

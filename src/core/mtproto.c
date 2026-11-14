@@ -152,7 +152,6 @@ int cegram_mtproto_send_req_dh_params(cegram_transport_t *t,
 
     memset(out_dh, 0, sizeof(*out_dh));
 
-    /* Convert p and q to big-endian bytes */
     p_be[0] = (uint8_t)((p >> 24) & 0xFF);
     p_be[1] = (uint8_t)((p >> 16) & 0xFF);
     p_be[2] = (uint8_t)((p >> 8) & 0xFF);
@@ -163,7 +162,6 @@ int cegram_mtproto_send_req_dh_params(cegram_transport_t *t,
     q_be[2] = (uint8_t)((q >> 8) & 0xFF);
     q_be[3] = (uint8_t)(q & 0xFF);
 
-    /* 1. Assemble p_q_inner_data_dc */
     memcpy(inner_data + inner_len, &inner_constructor, 4); inner_len += 4;
     inner_len += serialize_tl_bytes(inner_data + inner_len, pq_raw, pq_len);
     inner_len += serialize_tl_bytes(inner_data + inner_len, p_be, 4);
@@ -173,12 +171,10 @@ int cegram_mtproto_send_req_dh_params(cegram_transport_t *t,
     memcpy(inner_data + inner_len, new_nonce, 32); inner_len += 32;
     memcpy(inner_data + inner_len, &dc_id, 4); inner_len += 4;
 
-    /* 2. Encrypt with RSA */
     if (cegram_rsa_encrypt_pad(inner_data, inner_len, key, rsa_encrypted) != CEGRAM_OK) {
         return CEGRAM_ERR_CRYPTO;
     }
 
-    /* 3. Assemble req_DH_params */
     memcpy(req_body + req_len, &req_constructor, 4); req_len += 4;
     memcpy(req_body + req_len, nonce, 16); req_len += 16;
     memcpy(req_body + req_len, server_nonce, 16); req_len += 16;
@@ -187,19 +183,16 @@ int cegram_mtproto_send_req_dh_params(cegram_transport_t *t,
     memcpy(req_body + req_len, &key->fingerprint, 8); req_len += 8;
     req_len += serialize_tl_bytes(req_body + req_len, rsa_encrypted, 256);
 
-    /* 4. Wrap into unencrypted MTProto packet */
     msg_data_len = (uint32_t)req_len;
     memcpy(packet + packet_len, &auth_key_id, 8); packet_len += 8;
     memcpy(packet + packet_len, &msg_id, 8); packet_len += 8;
     memcpy(packet + packet_len, &msg_data_len, 4); packet_len += 4;
     memcpy(packet + packet_len, req_body, req_len); packet_len += req_len;
 
-    /* 5. Send packet */
     if (cegram_transport_send(t, packet, packet_len) != CEGRAM_OK) {
         return CEGRAM_ERR_NETWORK;
     }
 
-    /* 6. Receive server response */
     if (cegram_transport_recv(t, recv_buf, sizeof(recv_buf), &recv_len) != CEGRAM_OK) {
         return CEGRAM_ERR_NETWORK;
     }
@@ -208,11 +201,10 @@ int cegram_mtproto_send_req_dh_params(cegram_transport_t *t,
         return CEGRAM_ERR_SCHEMA;
     }
 
-    offset = 20; /* Skip unencrypted header (auth_key_id + msg_id + length) */
+    offset = 20;
 
     memcpy(&resp_constructor, recv_buf + offset, 4); offset += 4;
     if (resp_constructor != TG_CONSTRUCTOR_SERVER_DH_PARAMS_OK) {
-        /* Server rejected or sent error */
         return CEGRAM_ERR_SCHEMA;
     }
 

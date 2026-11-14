@@ -9,7 +9,6 @@ typedef struct {
     uint32_t exponent;
 } cegram_rsa_key_t;
 
-/* Find embedded Telegram RSA public key by fingerprint */
 const cegram_rsa_key_t *cegram_find_rsa_key(uint64_t fingerprint);
 
-#endif /* CEGRAM_RSA_KEYS_H */
+#endif

@@ -10,7 +10,6 @@
 #endif
 
 #if defined(_MSC_VER) && (_MSC_VER < 1600)
-    /* Ancient Visual Studio / eMbedded Visual C++ without stdint.h */
     typedef unsigned char      uint8_t;
     typedef signed char        int8_t;
     typedef unsigned short     uint16_t;
@@ -34,7 +33,6 @@
 #define CEGRAM_ERR_CRYPTO  -3
 #define CEGRAM_ERR_SCHEMA  -4
 
-/* Endian helpers (Telegram MTProto is Little-Endian) */
 static inline uint32_t cegram_le32(uint32_t val) {
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
     return ((val & 0xFF) << 24) | ((val & 0xFF00) << 8) |
@@ -53,4 +51,4 @@ static inline uint64_t cegram_le64(uint64_t val) {
 #endif
 }
 
-#endif /* CEGRAM_COMMON_H */
+#endif
