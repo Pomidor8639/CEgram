@@ -14,8 +14,6 @@
 #include "cegram/rsa_keys.h"
 
 #define IDC_LOGIN_PHONE       101
-#define IDC_LOGIN_API_ID      102
-#define IDC_LOGIN_API_HASH    103
 #define IDC_LOGIN_SEND_CODE   104
 #define IDC_LOGIN_CODE        105
 #define IDC_LOGIN_SIGN_IN     106
@@ -43,10 +41,6 @@ static int g_current_dialog_index = -1;
 
 static HWND g_hPhoneLabel = NULL;
 static HWND g_hPhoneEdit = NULL;
-static HWND g_hApiIdLabel = NULL;
-static HWND g_hApiIdEdit = NULL;
-static HWND g_hApiHashLabel = NULL;
-static HWND g_hApiHashEdit = NULL;
 static HWND g_hSendCodeBtn = NULL;
 static HWND g_hCodeLabel = NULL;
 static HWND g_hCodeEdit = NULL;
@@ -76,17 +70,6 @@ static void tchar_to_char(const TCHAR *src, char *dst, size_t max_len) {
     strncpy(dst, src, max_len);
     dst[max_len - 1] = '\0';
 #endif
-}
-
-static int cegram_ttoi(const TCHAR *s) {
-    int val = 0;
-    if (!s) return 0;
-    while (*s == TEXT(' ') || *s == TEXT('\t')) s++;
-    while (*s >= TEXT('0') && *s <= TEXT('9')) {
-        val = val * 10 + (*s - TEXT('0'));
-        s++;
-    }
-    return val;
 }
 
 static void set_status(const TCHAR *text) {
@@ -168,10 +151,6 @@ static void show_login_view(int show) {
     int cmd = show ? SW_SHOW : SW_HIDE;
     ShowWindow(g_hPhoneLabel, cmd);
     ShowWindow(g_hPhoneEdit, cmd);
-    ShowWindow(g_hApiIdLabel, cmd);
-    ShowWindow(g_hApiIdEdit, cmd);
-    ShowWindow(g_hApiHashLabel, cmd);
-    ShowWindow(g_hApiHashEdit, cmd);
     ShowWindow(g_hSendCodeBtn, cmd);
     ShowWindow(g_hCodeLabel, cmd);
     ShowWindow(g_hCodeEdit, cmd);
@@ -202,25 +181,19 @@ static void layout_controls(HWND hwnd) {
     h = rc.bottom - rc.top;
 
     if (!g_logged_in) {
-        int y = margin;
+        int y = margin + 4;
         int field_w = w - margin * 2;
         if (field_w > 320) field_w = 320;
 
-        MoveWindow(g_hPhoneLabel, margin, y, field_w, 18, TRUE); y += 20;
-        MoveWindow(g_hPhoneEdit, margin, y, field_w, input_h, TRUE); y += input_h + 6;
+        MoveWindow(g_hPhoneLabel, margin, y, field_w, 18, TRUE); y += 22;
+        MoveWindow(g_hPhoneEdit, margin, y, field_w, input_h, TRUE); y += input_h + 10;
 
-        MoveWindow(g_hApiIdLabel, margin, y, field_w, 18, TRUE); y += 20;
-        MoveWindow(g_hApiIdEdit, margin, y, field_w, input_h, TRUE); y += input_h + 6;
+        MoveWindow(g_hSendCodeBtn, margin, y, 120, 28, TRUE); y += 38;
 
-        MoveWindow(g_hApiHashLabel, margin, y, field_w, 18, TRUE); y += 20;
-        MoveWindow(g_hApiHashEdit, margin, y, field_w, input_h, TRUE); y += input_h + 8;
+        MoveWindow(g_hCodeLabel, margin, y, field_w, 18, TRUE); y += 22;
+        MoveWindow(g_hCodeEdit, margin, y, field_w, input_h, TRUE); y += input_h + 10;
 
-        MoveWindow(g_hSendCodeBtn, margin, y, 120, 28, TRUE); y += 34;
-
-        MoveWindow(g_hCodeLabel, margin, y, field_w, 18, TRUE); y += 20;
-        MoveWindow(g_hCodeEdit, margin, y, field_w, input_h, TRUE); y += input_h + 8;
-
-        MoveWindow(g_hSignInBtn, margin, y, 120, 28, TRUE); y += 36;
+        MoveWindow(g_hSignInBtn, margin, y, 120, 28, TRUE); y += 40;
 
         MoveWindow(g_hStatusLabel, margin, y, field_w, 36, TRUE);
     } else {
@@ -357,16 +330,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             g_hPhoneEdit = CreateWindow(TEXT("EDIT"), TEXT(""),
                 WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_LOGIN_PHONE, g_hInstance, NULL);
 
-            g_hApiIdLabel = CreateWindow(TEXT("STATIC"), TEXT("API ID:"),
-                WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, NULL, g_hInstance, NULL);
-            g_hApiIdEdit = CreateWindow(TEXT("EDIT"), TEXT("2040"),
-                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_LOGIN_API_ID, g_hInstance, NULL);
-
-            g_hApiHashLabel = CreateWindow(TEXT("STATIC"), TEXT("API Hash:"),
-                WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, NULL, g_hInstance, NULL);
-            g_hApiHashEdit = CreateWindow(TEXT("EDIT"), TEXT("b18441a1ff607e10a989891a5462e627"),
-                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, (HMENU)IDC_LOGIN_API_HASH, g_hInstance, NULL);
-
             g_hSendCodeBtn = CreateWindow(TEXT("BUTTON"), TEXT("Send Code"),
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)IDC_LOGIN_SEND_CODE, g_hInstance, NULL);
 
@@ -436,34 +399,28 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             int wmEvent = HIWORD(wParam);
 
             if (wmId == IDC_LOGIN_SEND_CODE) {
-                TCHAR phone_w[64], api_id_w[32], api_hash_w[64];
-                char phone_utf8[64], api_hash_utf8[64];
-                int32_t api_id;
+                TCHAR phone_w[64];
+                char phone_utf8[64];
                 cegram_auth_sent_code_t sent_code;
                 cegram_rpc_error_t err;
                 int res;
 
                 GetWindowText(g_hPhoneEdit, phone_w, sizeof(phone_w) / sizeof(TCHAR));
-                GetWindowText(g_hApiIdEdit, api_id_w, sizeof(api_id_w) / sizeof(TCHAR));
-                GetWindowText(g_hApiHashEdit, api_hash_w, sizeof(api_hash_w) / sizeof(TCHAR));
-
                 tchar_to_char(phone_w, phone_utf8, sizeof(phone_utf8));
-                tchar_to_char(api_hash_w, api_hash_utf8, sizeof(api_hash_utf8));
-                api_id = (int32_t)cegram_ttoi(api_id_w);
 
                 strncpy(g_saved_phone, phone_utf8, sizeof(g_saved_phone));
                 set_status(TEXT("Sending verification code..."));
                 memset(&err, 0, sizeof(err));
                 memset(&sent_code, 0, sizeof(sent_code));
 
-                res = cegram_auth_send_code(&g_transport, &g_session, phone_utf8, api_id, api_hash_utf8, &sent_code, &err);
+                res = cegram_auth_send_code(&g_transport, &g_session, phone_utf8, CEGRAM_DEFAULT_API_ID, CEGRAM_DEFAULT_API_HASH, &sent_code, &err);
                 if (res != CEGRAM_OK && err.error_code == 303 && strncmp(err.error_message, "PHONE_MIGRATE_", 14) == 0) {
                     int target_dc = atoi(err.error_message + 14);
                     set_status(TEXT("Migrating to another DC..."));
                     if (init_network_and_handshake(target_dc) == CEGRAM_OK) {
                         memset(&err, 0, sizeof(err));
                         memset(&sent_code, 0, sizeof(sent_code));
-                        res = cegram_auth_send_code(&g_transport, &g_session, phone_utf8, api_id, api_hash_utf8, &sent_code, &err);
+                        res = cegram_auth_send_code(&g_transport, &g_session, phone_utf8, CEGRAM_DEFAULT_API_ID, CEGRAM_DEFAULT_API_HASH, &sent_code, &err);
                     }
                 }
 

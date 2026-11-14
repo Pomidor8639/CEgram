@@ -327,10 +327,10 @@ int main(int argc, char **argv) {
                 printf("    Telegram Error %d: %s\n\n", err.error_code, err.error_message);
             }
         }
-    } else if (argc >= 4 && (strcmp(argv[1], "sendcode") == 0 || strcmp(argv[1], "login") == 0)) {
+    } else if (argc >= 3 && (strcmp(argv[1], "sendcode") == 0 || strcmp(argv[1], "login") == 0)) {
         const char *phone = argv[2];
-        int32_t api_id = (int32_t)atoi(argv[3]);
-        const char *api_hash = (argc >= 5) ? argv[4] : "";
+        int32_t api_id = (argc >= 4) ? (int32_t)atoi(argv[3]) : CEGRAM_DEFAULT_API_ID;
+        const char *api_hash = (argc >= 5) ? argv[4] : CEGRAM_DEFAULT_API_HASH;
         cegram_auth_sent_code_t sent_code;
         cegram_rpc_error_t err;
         int is_login = (strcmp(argv[1], "login") == 0);
@@ -419,8 +419,8 @@ int main(int argc, char **argv) {
         }
     } else {
         printf("[*] User Authorization & Messaging Usage:\n");
-        printf("    cegram_cli.exe sendcode <phone_number> <api_id> <api_hash>\n");
-        printf("    cegram_cli.exe login <phone_number> <api_id> <api_hash>\n");
+        printf("    cegram_cli.exe sendcode <phone_number> [api_id] [api_hash]\n");
+        printf("    cegram_cli.exe login <phone_number> [api_id] [api_hash]\n");
         printf("    cegram_cli.exe dialogs [limit]\n");
         printf("    cegram_cli.exe history <peer_type: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> [limit]\n");
         printf("    cegram_cli.exe send <peer_type: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> <text>\n\n");

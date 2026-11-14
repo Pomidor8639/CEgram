@@ -34,6 +34,9 @@
 #define CEGRAM_ERR_SCHEMA  -4
 #define CEGRAM_ERR_BUFFER_TOO_SMALL -5
 
+#define CEGRAM_DEFAULT_API_ID      2040
+#define CEGRAM_DEFAULT_API_HASH    "b18441a1ff607e10a989891a5462e627"
+
 static inline uint32_t cegram_le32(uint32_t val) {
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
     return ((val & 0xFF) << 24) | ((val & 0xFF00) << 8) |
