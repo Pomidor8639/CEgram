@@ -104,3 +104,40 @@ bin\cegram_cli.exe dialogs [лимит]
 bin\cegram_cli.exe history <тип_пира: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> [лимит]
 bin\cegram_cli.exe send <тип_пира: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> <текст_сообщения>
 ```
+
+---
+
+## Сборка для Windows CE и запуск в эмуляторе
+
+### 1. Кросс-компиляция (ARM / x86 CEPC)
+
+Для сборки нативных исполняемых файлов под архитектуры процессоров ARM (Pocket PC / Windows Mobile) и x86 (CEPC) выполните:
+
+```cmd
+build_wince.bat
+```
+
+В результате сборки формируются бинарные файлы с импортом исключительно `COREDLL.dll` и `WS2.dll` (подсистема Windows CE GUI, машина `0x1C0` для ARM и `0x14C` для x86):
+* `bin\cegram_gui_arm.exe` - графический клиент для Pocket PC 2003 / Windows Mobile (ARM).
+* `bin\cegram_cli_arm.exe` - консольный клиент для Windows CE (ARM).
+* `bin\cegram_gui_x86ce.exe` - графический клиент для Windows CE (x86 CEPC).
+* `bin\cegram_cli_x86ce.exe` - консольный клиент для Windows CE (x86 CEPC).
+
+### 2. Запуск в Microsoft Device Emulator
+
+Для запуска автономного эмулятора Pocket PC 2003 Second Edition:
+
+```cmd
+run_emulator.bat
+```
+
+Папка `bin\` автоматически монтируется в операционной системе Windows CE как `\Storage Card`.
+
+### 3. Инструкция по запуску внутри эмулятора
+
+1. Запустите эмулятор с помощью скрипта `run_emulator.bat`.
+2. После загрузки рабочего стола Pocket PC откройте меню **Start** -> **Programs** -> **File Explorer**.
+3. В верхней строке выбора папки перейдите в **Storage Card**.
+4. Запустите `cegram_gui_arm.exe`.
+5. В открывшемся окне введите номер телефона, `API ID` и `API Hash`, нажмите **Send Code**, введите полученный код и выполните вход.
+6. Для быстрого тестирования с уже созданной сессией скопируйте `session.dat` в директорию `bin\`, после чего приложение сразу загрузит список чатов.

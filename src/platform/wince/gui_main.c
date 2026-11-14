@@ -78,6 +78,17 @@ static void tchar_to_char(const TCHAR *src, char *dst, size_t max_len) {
 #endif
 }
 
+static int cegram_ttoi(const TCHAR *s) {
+    int val = 0;
+    if (!s) return 0;
+    while (*s == TEXT(' ') || *s == TEXT('\t')) s++;
+    while (*s >= TEXT('0') && *s <= TEXT('9')) {
+        val = val * 10 + (*s - TEXT('0'));
+        s++;
+    }
+    return val;
+}
+
 static void set_status(const TCHAR *text) {
     if (g_hStatusLabel) {
         SetWindowText(g_hStatusLabel, text);
@@ -289,10 +300,11 @@ static void load_history(int dialog_idx) {
             size_t idx = i - 1;
             TCHAR msg_w[1024];
             TCHAR line_buf[1200];
+            size_t llen;
             char_to_tchar(messages[idx].message, msg_w, sizeof(msg_w) / sizeof(TCHAR));
             _sntprintf(line_buf, sizeof(line_buf) / sizeof(TCHAR), TEXT("[%s]: %s\r\n"),
                        messages[idx].is_outgoing ? TEXT("Me") : TEXT("Peer"), msg_w);
-            size_t llen = _tcslen(line_buf);
+            llen = _tcslen(line_buf);
             if (text_off + llen < sizeof(total_text) / sizeof(TCHAR) - 1) {
                 _tcscpy(total_text + text_off, line_buf);
                 text_off += llen;
@@ -437,7 +449,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
 
                 tchar_to_char(phone_w, phone_utf8, sizeof(phone_utf8));
                 tchar_to_char(api_hash_w, api_hash_utf8, sizeof(api_hash_utf8));
-                api_id = (int32_t)_ttoi(api_id_w);
+                api_id = (int32_t)cegram_ttoi(api_id_w);
 
                 strncpy(g_saved_phone, phone_utf8, sizeof(g_saved_phone));
                 set_status(TEXT("Sending verification code..."));
@@ -502,7 +514,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             } else if (wmId == IDC_CHAT_REFRESH_BTN) {
                 load_dialogs();
             } else if (wmId == IDC_CHAT_LOGOUT_BTN) {
-                remove("session.dat");
+                DeleteFile(TEXT("session.dat"));
                 g_logged_in = 0;
                 show_chat_view(0);
                 show_login_view(1);

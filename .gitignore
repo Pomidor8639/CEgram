@@ -28,5 +28,11 @@ ARM/
 # Temporary & Log files
 *.log
 *.tmp
+*.msi
+*.zip
+*.tar.bz2
+*.tar.xz
+toolchain/
+emulator/
 session*.dat
 api.tl
