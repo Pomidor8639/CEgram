@@ -16,6 +16,7 @@ cl.exe /nologo /W3 /O2 /I"include" ^
     src\core\transport.c ^
     src\core\crypto.c ^
     src\core\rsa_keys.c ^
+    src\core\aes.c ^
     src\core\mtproto.c ^
     src\platform\cli\main.c ^
     ws2_32.lib advapi32.lib ^

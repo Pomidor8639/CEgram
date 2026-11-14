@@ -18,6 +18,8 @@ int main(void) {
     cegram_transport_t transport;
     cegram_respq_t respq;
     cegram_server_dh_params_ok_t server_dh;
+    cegram_server_dh_inner_data_t server_dh_inner;
+    cegram_session_t session;
     uint8_t nonce[16];
     uint8_t new_nonce[32];
     uint64_t pq_val = 0;
@@ -27,6 +29,7 @@ int main(void) {
     uint16_t dc_port = 443;
     int res;
     size_t i;
+    FILE *fp;
 
     printf("=========================================\n");
     printf("   CEgram - Native MTProto 2.0 Test CLI  \n");
@@ -118,15 +121,57 @@ int main(void) {
         return 1;
     }
 
-    printf("\n[+++] FANTASTIC SUCCESS! Received server_DH_params_ok!\n");
-    print_hex("    Verified Nonce", server_dh.nonce, 16);
-    print_hex("    Server Nonce", server_dh.server_nonce, 16);
-    printf("    Encrypted DH Answer size: %u bytes\n", (unsigned int)server_dh.encrypted_answer_len);
+    printf("\n[+] SUCCESS: Received server_DH_params_ok (%u bytes)!\n", (unsigned int)server_dh.encrypted_answer_len);
+
+    printf("[*] Decrypting server DH answer with AES-256-IGE...\n");
+    res = cegram_mtproto_decrypt_server_dh_inner(&server_dh, new_nonce, &server_dh_inner);
+    if (res != CEGRAM_OK) {
+        printf("[!] Failed to decrypt server_DH_inner_data (error: %d).\n", res);
+        cegram_transport_disconnect(&transport);
+        cegram_transport_cleanup();
+        return 1;
+    }
+
+    printf("[+] DH parameters decrypted successfully!\n");
+    printf("    Generator g = %d\n", server_dh_inner.g);
+    printf("    DH Prime len = %u bytes\n", (unsigned int)server_dh_inner.dh_prime_len);
+    printf("    Server g_a len = %u bytes\n", (unsigned int)server_dh_inner.g_a_len);
+    printf("    Server Time = %d\n", server_dh_inner.server_time);
+
+    printf("[*] Computing client secret b, g_b, and AuthKey via mini-gmp...\n");
+    printf("[*] Sending set_client_DH_params to Telegram DC2...\n");
+    res = cegram_mtproto_complete_dh(&transport,
+                                     nonce,
+                                     respq.server_nonce,
+                                     new_nonce,
+                                     &server_dh_inner,
+                                     &session);
+    if (res != CEGRAM_OK) {
+        printf("[!] Failed to complete DH exchange (error: %d).\n", res);
+        cegram_transport_disconnect(&transport);
+        cegram_transport_cleanup();
+        return 1;
+    }
+
+    printf("\n[+++] MASTER MILESTONE REACHED! Received dh_gen_ok and verified new_nonce_hash1!\n");
+    printf("    Auth Key ID: 0x%016llX\n", (unsigned long long)session.auth_key_id);
+    print_hex("    Master AuthKey", session.auth_key, 32);
+    printf("    (and 224 more bytes of AuthKey)\n");
+    printf("    Server Time Offset: %d seconds\n", session.time_offset);
+
+    fp = fopen("session.dat", "wb");
+    if (fp) {
+        fwrite(&session.auth_key_id, 8, 1, fp);
+        fwrite(session.auth_key, 256, 1, fp);
+        fwrite(&session.time_offset, 4, 1, fp);
+        fclose(fp);
+        printf("[+] Saved persistent session to session.dat\n");
+    }
 
     printf("\n[*] Disconnecting from DC...\n");
     cegram_transport_disconnect(&transport);
     cegram_transport_cleanup();
 
-    printf("[*] MTProto 2.0 Auth Key Creation Step 2 (req_DH_params) is COMPLETE!\n");
+    printf("[*] MTProto 2.0 Auth Key Creation is 100%% COMPLETE!\n");
     return 0;
 }

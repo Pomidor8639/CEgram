@@ -237,3 +237,30 @@ int cegram_rsa_encrypt_pad(const uint8_t *inner_data, size_t inner_len,
     mpz_clear(c);
     return CEGRAM_OK;
 }
+
+void cegram_derive_tmp_aes_keys(const uint8_t new_nonce[32],
+                                const uint8_t server_nonce[16],
+                                uint8_t out_key[32],
+                                uint8_t out_iv[32]) {
+    uint8_t buf[64];
+    uint8_t h1[20], h2[20], h3[20];
+
+    memcpy(buf, new_nonce, 32);
+    memcpy(buf + 32, server_nonce, 16);
+    cegram_sha1(buf, 48, h1);
+
+    memcpy(buf, server_nonce, 16);
+    memcpy(buf + 16, new_nonce, 32);
+    cegram_sha1(buf, 48, h2);
+
+    memcpy(buf, new_nonce, 32);
+    memcpy(buf + 32, new_nonce, 32);
+    cegram_sha1(buf, 64, h3);
+
+    memcpy(out_key, h1, 20);
+    memcpy(out_key + 20, h2, 12);
+
+    memcpy(out_iv, h2 + 12, 8);
+    memcpy(out_iv + 8, h3, 20);
+    memcpy(out_iv + 28, new_nonce, 4);
+}
