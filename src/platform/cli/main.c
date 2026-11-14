@@ -147,6 +147,7 @@ int main(int argc, char **argv) {
     int32_t this_dc = 0;
     int32_t nearest_dc = 0;
     size_t off;
+    size_t i;
 
     printf("=========================================\n");
     printf("   CEgram - Native MTProto 2.0 Test CLI  \n");
@@ -240,7 +241,93 @@ int main(int argc, char **argv) {
 
     cegram_session_save(&session, "session.dat");
 
-    if (argc >= 4 && (strcmp(argv[1], "sendcode") == 0 || strcmp(argv[1], "login") == 0)) {
+    if (argc >= 2 && strcmp(argv[1], "dialogs") == 0) {
+        int32_t limit = (argc >= 3) ? (int32_t)atoi(argv[2]) : 20;
+        cegram_dialog_item_t dialogs[50];
+        size_t count = 0;
+        cegram_rpc_error_t err;
+        memset(&err, 0, sizeof(err));
+        memset(dialogs, 0, sizeof(dialogs));
+
+        printf("=========================================\n");
+        printf("   FETCHING DIALOGS: messages.getDialogs \n");
+        printf("=========================================\n\n");
+
+        res = cegram_messages_get_dialogs(&transport, &session, limit, dialogs, 50, &count, &err);
+        if (res == CEGRAM_OK) {
+            printf("[+] Retrieved %u dialogs:\n\n", (unsigned int)count);
+            for (i = 0; i < count; i++) {
+                const char *ptype_str = "Chat";
+                if (dialogs[i].peer_type == CEGRAM_PEER_USER) ptype_str = "User";
+                else if (dialogs[i].peer_type == CEGRAM_PEER_CHANNEL) ptype_str = "Channel";
+
+                printf("  [%u] %s (Type: %s, ID: %llu, AccessHash: 0x%016llX)\n",
+                       (unsigned int)(i + 1), dialogs[i].title, ptype_str,
+                       (unsigned long long)dialogs[i].peer_id,
+                       (unsigned long long)dialogs[i].access_hash);
+                if (dialogs[i].unread_count > 0) {
+                    printf("      Unread: %d\n", dialogs[i].unread_count);
+                }
+            }
+            printf("\n");
+        } else {
+            printf("[!] messages.getDialogs failed (error: %d)\n", res);
+            if (err.error_code != 0) {
+                printf("    Telegram Error %d: %s\n\n", err.error_code, err.error_message);
+            }
+        }
+    } else if (argc >= 5 && strcmp(argv[1], "history") == 0) {
+        int peer_type = atoi(argv[2]);
+        uint64_t peer_id = cegram_strtou64(argv[3], 10);
+        uint64_t access_hash = cegram_strtou64(argv[4], 16);
+        int32_t limit = (argc >= 6) ? (int32_t)atoi(argv[5]) : 20;
+        cegram_message_item_t messages[50];
+        size_t count = 0;
+        cegram_rpc_error_t err;
+        memset(&err, 0, sizeof(err));
+        memset(messages, 0, sizeof(messages));
+
+        printf("=========================================\n");
+        printf("   FETCHING HISTORY: messages.getHistory \n");
+        printf("=========================================\n\n");
+
+        res = cegram_messages_get_history(&transport, &session, peer_type, peer_id, access_hash, limit, messages, 50, &count, &err);
+        if (res == CEGRAM_OK) {
+            printf("[+] Retrieved %u messages:\n\n", (unsigned int)count);
+            for (i = 0; i < count; i++) {
+                printf("  [%d] %s: %s\n", messages[i].id,
+                       messages[i].is_outgoing ? "Me" : "Peer",
+                       messages[i].message);
+            }
+            printf("\n");
+        } else {
+            printf("[!] messages.getHistory failed (error: %d)\n", res);
+            if (err.error_code != 0) {
+                printf("    Telegram Error %d: %s\n\n", err.error_code, err.error_message);
+            }
+        }
+    } else if (argc >= 6 && strcmp(argv[1], "send") == 0) {
+        int peer_type = atoi(argv[2]);
+        uint64_t peer_id = cegram_strtou64(argv[3], 10);
+        uint64_t access_hash = cegram_strtou64(argv[4], 16);
+        const char *msg_text = argv[5];
+        cegram_rpc_error_t err;
+        memset(&err, 0, sizeof(err));
+
+        printf("=========================================\n");
+        printf("   SENDING MESSAGE: messages.sendMessage \n");
+        printf("=========================================\n\n");
+
+        res = cegram_messages_send_message(&transport, &session, peer_type, peer_id, access_hash, msg_text, &err);
+        if (res == CEGRAM_OK) {
+            printf("[+++] MESSAGE SENT SUCCESSFULLY!\n\n");
+        } else {
+            printf("[!] messages.sendMessage failed (error: %d)\n", res);
+            if (err.error_code != 0) {
+                printf("    Telegram Error %d: %s\n\n", err.error_code, err.error_message);
+            }
+        }
+    } else if (argc >= 4 && (strcmp(argv[1], "sendcode") == 0 || strcmp(argv[1], "login") == 0)) {
         const char *phone = argv[2];
         int32_t api_id = (int32_t)atoi(argv[3]);
         const char *api_hash = (argc >= 5) ? argv[4] : "";
@@ -258,6 +345,36 @@ int main(int argc, char **argv) {
         printf("[*] API Hash:     %s\n", api_hash);
 
         res = cegram_auth_send_code(&transport, &session, phone, api_id, api_hash, &sent_code, &err);
+        if (res != CEGRAM_OK && err.error_code == 303 && strncmp(err.error_message, "PHONE_MIGRATE_", 14) == 0) {
+            int target_dc = atoi(err.error_message + 14);
+            const cegram_dc_info_t *dc_info = cegram_get_dc_info(target_dc);
+            if (dc_info) {
+                printf("[!] PHONE_MIGRATE_%d received! Migrating to DC%d (%s:%u)...\n", target_dc, target_dc, dc_info->ip, dc_info->port);
+                cegram_transport_disconnect(&transport);
+                res = cegram_transport_connect(&transport, dc_info->ip, dc_info->port);
+                if (res == CEGRAM_OK) {
+                    char sess_path[64];
+                    snprintf(sess_path, sizeof(sess_path), "session_dc%d.dat", target_dc);
+                    if (cegram_session_load(&session, sess_path) != CEGRAM_OK) {
+                        res = perform_handshake(&transport, &session);
+                        if (res == CEGRAM_OK) {
+                            cegram_session_save(&session, sess_path);
+                            cegram_session_save(&session, "session.dat");
+                        }
+                    } else {
+                        cegram_random_bytes((uint8_t *)&session.session_id, 8);
+                        session.seq_no = 0;
+                    }
+                    if (res == CEGRAM_OK) {
+                        printf("[*] Retrying auth.sendCode on DC%d...\n", target_dc);
+                        memset(&err, 0, sizeof(err));
+                        memset(&sent_code, 0, sizeof(sent_code));
+                        res = cegram_auth_send_code(&transport, &session, phone, api_id, api_hash, &sent_code, &err);
+                    }
+                }
+            }
+        }
+
         if (res == CEGRAM_OK) {
             printf("\n[+++] AUTH.SENDCODE SUCCESS!\n");
             printf("      Phone Code Hash: %s\n", sent_code.phone_code_hash);
@@ -301,10 +418,12 @@ int main(int argc, char **argv) {
             }
         }
     } else {
-        printf("[*] User Authorization Usage:\n");
+        printf("[*] User Authorization & Messaging Usage:\n");
         printf("    cegram_cli.exe sendcode <phone_number> <api_id> <api_hash>\n");
         printf("    cegram_cli.exe login <phone_number> <api_id> <api_hash>\n");
-        printf("    Example: bin\\cegram_cli.exe login +1234567890 2040 b18441a1ff607e10a989891a5462e627\n\n");
+        printf("    cegram_cli.exe dialogs [limit]\n");
+        printf("    cegram_cli.exe history <peer_type: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> [limit]\n");
+        printf("    cegram_cli.exe send <peer_type: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> <text>\n\n");
     }
 
     printf("[*] Disconnecting from DC...\n");

@@ -21,8 +21,8 @@
   * Архитектуры процессоров: ARM (ARMv4T, ARMv5TE, XScale) и x86.
 * **Минимальные системные требования:**
   * Реализация на чистом ANSI C (C89/C99).
-  * Прямая работа с системными API (Win32 API, Winsock 1.1 / 2.0).
-  * Потребление оперативной памяти: 2--5 МБ (при жестком системном лимите Windows CE в 32 МБ на процесс).
+  * Прямая работа с системными API (Win32 GDI, Winsock 1.1 / 2.0).
+  * Потребление оперативной памяти: 2-5 МБ (при жестком системном лимите Windows CE в 32 МБ на процесс).
 
 ---
 
@@ -30,7 +30,7 @@
 
 ```
 +--------------------------------------------------------+
-|                   GUI (Win32 GDI)                      |  Windows CE
+|                   GUI (Win32 GDI)                      |  Windows CE / Win32
 +--------------------------------------------------------+
 |                 Telegram Client API                    |
 |      (auth.signIn, messages.getHistory, sendMsg)       |  Кроссплатформенный C
@@ -61,7 +61,7 @@
 * [x] Сетевой транспорт Abridged MTProto по TCP.
 * [x] Генерация криптографических нексов и расчет `message_id`.
 * [x] Отправка `req_pq_multi` и прием `resPQ`.
-* [x] Быстрое разложение $PQ$ на множители $P$ и $Q$ методом Полларда.
+* [x] Быстрое разложение PQ на множители P и Q методом Полларда.
 * [x] Встроенные публичные RSA-ключи Telegram и сопоставление отпечатков.
 * [x] Расчет SHA-1 и упаковка данных по схеме RSA-PAD.
 * [x] Модульное возведение в степень для RSA-2048 через встроенный `mini-gmp`.
@@ -74,18 +74,33 @@
 * [x] Автоматическая инициализация сессии (`invokeWithLayer` Layer 184 + `initConnection`).
 * [x] TL-сериализатор и парсер базовых типов Type Language.
 * [x] Вызовы API методов: `help.getNearestDc`, `auth.sendCode`, `auth.signIn`.
-* [ ] Авторизация пользователя (2FA/облачный пароль SRP-6A).
-* [ ] Получение диалогов и сообщений (`messages.getDialogs`, `messages.getHistory`, `messages.sendMessage`).
-* [ ] Графический интерфейс Win32 GDI для Windows CE.
+* [x] Автоматическая миграция между дата-центрами (`PHONE_MIGRATE_X`).
+* [x] Получение списка диалогов (`messages.getDialogs`).
+* [x] Получение истории сообщений чата (`messages.getHistory`).
+* [x] Отправка текстовых сообщений (`messages.sendMessage`).
+* [x] Графический интерфейс Win32 GDI для Windows CE / Win32 (`src/platform/wince/gui_main.c`).
+* [ ] Авторизация пользователя по облачному паролю (2FA SRP-6A).
 
 ---
 
-## Сборка и тестирование ядра на ПК
+## Сборка и тестирование
 
-Для сборки консольного тестового клиента под Windows (x64) выполните команду из корня проекта:
+Для компиляции полного набора бинарных файлов (CLI и GUI) выполните:
 
 ```cmd
 build.bat
 ```
 
-Бинарный файл создается в директории `bin/cegram_cli.exe`.
+В результате сборки создаются два исполняемых файла:
+* `bin\cegram_cli.exe` - консольный интерфейс для полной диагностики протокола.
+* `bin\cegram_gui.exe` - графическое приложение с адаптивным интерфейсом под Windows CE и Win32.
+
+### Команды CLI-клиента:
+
+```cmd
+bin\cegram_cli.exe sendcode <номер_телефона> <api_id> <api_hash>
+bin\cegram_cli.exe login <номер_телефона> <api_id> <api_hash>
+bin\cegram_cli.exe dialogs [лимит]
+bin\cegram_cli.exe history <тип_пира: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> [лимит]
+bin\cegram_cli.exe send <тип_пира: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> <текст_сообщения>
+```

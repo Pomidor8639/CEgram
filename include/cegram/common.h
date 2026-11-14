@@ -52,4 +52,25 @@ static inline uint64_t cegram_le64(uint64_t val) {
 #endif
 }
 
+static inline uint64_t cegram_strtou64(const char *str, int base) {
+    uint64_t res = 0;
+    if (!str) return 0;
+    while (*str == ' ' || *str == '\t') str++;
+    if (base == 16 || (base == 0 && str[0] == '0' && (str[1] == 'x' || str[1] == 'X'))) {
+        if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) str += 2;
+        while (*str) {
+            char c = *str++;
+            if (c >= '0' && c <= '9') res = (res << 4) | (c - '0');
+            else if (c >= 'a' && c <= 'f') res = (res << 4) | (c - 'a' + 10);
+            else if (c >= 'A' && c <= 'F') res = (res << 4) | (c - 'A' + 10);
+            else break;
+        }
+    } else {
+        while (*str >= '0' && *str <= '9') {
+            res = res * 10 + (*str++ - '0');
+        }
+    }
+    return res;
+}
+
 #endif

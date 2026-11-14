@@ -28,4 +28,5 @@ ARM/
 # Temporary & Log files
 *.log
 *.tmp
-session.dat
+session*.dat
+api.tl

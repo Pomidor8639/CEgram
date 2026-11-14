@@ -923,9 +923,13 @@ int cegram_auth_sign_in(cegram_transport_t *t,
             }
             uint32_t user_ctor = 0;
             cegram_tl_read_uint32(resp, resp_len, &off, &user_ctor);
-            if (user_ctor == TG_CONSTRUCTOR_USER) {
+            if (user_ctor == TG_CONSTRUCTOR_USER || user_ctor == TG_CONSTRUCTOR_USER_OLD) {
                 uint32_t uflags = 0;
                 cegram_tl_read_uint32(resp, resp_len, &off, &uflags);
+                if (user_ctor == TG_CONSTRUCTOR_USER) {
+                    uint32_t uflags2 = 0;
+                    cegram_tl_read_uint32(resp, resp_len, &off, &uflags2);
+                }
                 cegram_tl_read_uint64(resp, resp_len, &off, &out_user->user_id);
                 uint64_t access_hash = 0;
                 if (uflags & (1 << 0)) {
@@ -982,5 +986,445 @@ int cegram_mtproto_wrap_init_connection(uint8_t *buf, size_t max_buf_len, size_t
     off += inner_query_len;
 
     *out_len = off;
+    return CEGRAM_OK;
+}
+
+static const cegram_dc_info_t g_cegram_dcs[] = {
+    { 1, "149.154.175.50", 443 },
+    { 2, "149.154.167.50", 443 },
+    { 3, "149.154.175.100", 443 },
+    { 4, "149.154.167.91", 443 },
+    { 5, "91.108.56.130", 443 }
+};
+
+const cegram_dc_info_t *cegram_get_dc_info(int dc_id) {
+    size_t i;
+    for (i = 0; i < sizeof(g_cegram_dcs) / sizeof(g_cegram_dcs[0]); i++) {
+        if (g_cegram_dcs[i].id == dc_id) {
+            return &g_cegram_dcs[i];
+        }
+    }
+    return NULL;
+}
+
+static int serialize_input_peer(uint8_t *buf, size_t max_len, size_t *off, int peer_type, uint64_t peer_id, uint64_t access_hash) {
+    if (peer_type == CEGRAM_PEER_SELF) {
+        return cegram_tl_write_uint32(buf, max_len, off, TG_CONSTRUCTOR_INPUT_PEER_SELF);
+    } else if (peer_type == CEGRAM_PEER_USER) {
+        if (cegram_tl_write_uint32(buf, max_len, off, TG_CONSTRUCTOR_INPUT_PEER_USER) != CEGRAM_OK) return CEGRAM_ERR_BUFFER_TOO_SMALL;
+        if (cegram_tl_write_uint64(buf, max_len, off, peer_id) != CEGRAM_OK) return CEGRAM_ERR_BUFFER_TOO_SMALL;
+        return cegram_tl_write_uint64(buf, max_len, off, access_hash);
+    } else if (peer_type == CEGRAM_PEER_CHAT) {
+        if (cegram_tl_write_uint32(buf, max_len, off, TG_CONSTRUCTOR_INPUT_PEER_CHAT) != CEGRAM_OK) return CEGRAM_ERR_BUFFER_TOO_SMALL;
+        return cegram_tl_write_uint64(buf, max_len, off, peer_id);
+    } else if (peer_type == CEGRAM_PEER_CHANNEL) {
+        if (cegram_tl_write_uint32(buf, max_len, off, TG_CONSTRUCTOR_INPUT_PEER_CHANNEL) != CEGRAM_OK) return CEGRAM_ERR_BUFFER_TOO_SMALL;
+        if (cegram_tl_write_uint64(buf, max_len, off, peer_id) != CEGRAM_OK) return CEGRAM_ERR_BUFFER_TOO_SMALL;
+        return cegram_tl_write_uint64(buf, max_len, off, access_hash);
+    } else {
+        return cegram_tl_write_uint32(buf, max_len, off, TG_CONSTRUCTOR_INPUT_PEER_EMPTY);
+    }
+}
+
+int cegram_messages_send_message(cegram_transport_t *t,
+                                 cegram_session_t *session,
+                                 int peer_type,
+                                 uint64_t peer_id,
+                                 uint64_t access_hash,
+                                 const char *text,
+                                 cegram_rpc_error_t *out_error) {
+    uint8_t raw_req[2048];
+    size_t raw_len = 0;
+    uint8_t req[2048];
+    size_t req_len = 0;
+    uint8_t resp[2048];
+    size_t resp_len = 0;
+    uint32_t ctor = TG_CONSTRUCTOR_MESSAGES_SEND_MSG;
+    uint32_t flags = 0;
+    uint64_t random_id = 0;
+    int res;
+
+    if (!t || !session || !text) return CEGRAM_ERR_GENERIC;
+    if (out_error) memset(out_error, 0, sizeof(*out_error));
+
+    cegram_random_bytes((uint8_t *)&random_id, 8);
+
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, ctor);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, flags);
+    serialize_input_peer(raw_req, sizeof(raw_req), &raw_len, peer_type, peer_id, access_hash);
+    cegram_tl_write_string(raw_req, sizeof(raw_req), &raw_len, text);
+    cegram_tl_write_uint64(raw_req, sizeof(raw_req), &raw_len, random_id);
+
+    cegram_tl_write_uint32(req, sizeof(req), &req_len, TG_CONSTRUCTOR_INVOKE_WITH_LAYER);
+    cegram_tl_write_uint32(req, sizeof(req), &req_len, 184);
+    memcpy(req + req_len, raw_req, raw_len);
+    req_len += raw_len;
+
+    res = cegram_mtproto_invoke(t, session, req, req_len, resp, sizeof(resp), &resp_len);
+    if (res != CEGRAM_OK) return res;
+
+    if (resp_len >= 4) {
+        size_t off = 0;
+        uint32_t resp_ctor = 0;
+        cegram_tl_read_uint32(resp, resp_len, &off, &resp_ctor);
+        if (resp_ctor == TG_CONSTRUCTOR_RPC_ERROR) {
+            if (out_error) {
+                cegram_tl_read_uint32(resp, resp_len, &off, (uint32_t *)&out_error->error_code);
+                cegram_tl_read_string(resp, resp_len, &off, out_error->error_message, sizeof(out_error->error_message));
+            }
+            return CEGRAM_ERR_SCHEMA;
+        }
+    }
+
+    return CEGRAM_OK;
+}
+
+int cegram_messages_get_history(cegram_transport_t *t,
+                                cegram_session_t *session,
+                                int peer_type,
+                                uint64_t peer_id,
+                                uint64_t access_hash,
+                                int32_t limit,
+                                cegram_message_item_t *out_messages,
+                                size_t max_messages,
+                                size_t *out_count,
+                                cegram_rpc_error_t *out_error) {
+    uint8_t raw_req[512];
+    size_t raw_len = 0;
+    uint8_t req[512];
+    size_t req_len = 0;
+    uint8_t *resp = NULL;
+    size_t resp_len = 0;
+    size_t max_resp_len = 65536;
+    uint32_t ctor = TG_CONSTRUCTOR_MESSAGES_GET_HISTORY;
+    size_t off;
+    size_t scan;
+    size_t parsed = 0;
+    int res;
+
+    if (!t || !session || !out_count) return CEGRAM_ERR_GENERIC;
+    *out_count = 0;
+    if (out_error) memset(out_error, 0, sizeof(*out_error));
+
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, ctor);
+    serialize_input_peer(raw_req, sizeof(raw_req), &raw_len, peer_type, peer_id, access_hash);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, 0);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, 0);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, 0);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, (uint32_t)limit);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, 0);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, 0);
+    cegram_tl_write_uint64(raw_req, sizeof(raw_req), &raw_len, 0ULL);
+
+    cegram_tl_write_uint32(req, sizeof(req), &req_len, TG_CONSTRUCTOR_INVOKE_WITH_LAYER);
+    cegram_tl_write_uint32(req, sizeof(req), &req_len, 184);
+    memcpy(req + req_len, raw_req, raw_len);
+    req_len += raw_len;
+
+    resp = (uint8_t *)malloc(max_resp_len);
+    if (!resp) return CEGRAM_ERR_GENERIC;
+
+    res = cegram_mtproto_invoke(t, session, req, req_len, resp, max_resp_len, &resp_len);
+    if (res != CEGRAM_OK) {
+        free(resp);
+        return res;
+    }
+
+    if (resp_len < 4) {
+        free(resp);
+        return CEGRAM_ERR_SCHEMA;
+    }
+
+    off = 0;
+    uint32_t resp_ctor = 0;
+    cegram_tl_read_uint32(resp, resp_len, &off, &resp_ctor);
+
+    if (resp_ctor == TG_CONSTRUCTOR_RPC_ERROR) {
+        if (out_error) {
+            cegram_tl_read_uint32(resp, resp_len, &off, (uint32_t *)&out_error->error_code);
+            cegram_tl_read_string(resp, resp_len, &off, out_error->error_message, sizeof(out_error->error_message));
+        }
+        free(resp);
+        return CEGRAM_ERR_SCHEMA;
+    }
+
+    for (scan = 4; scan + 4 <= resp_len && parsed < max_messages; scan += 4) {
+        uint32_t tag = 0;
+        memcpy(&tag, resp + scan, 4);
+        if (tag == TG_CONSTRUCTOR_MESSAGE) {
+            off = scan + 4;
+            uint32_t mflags = 0;
+            uint32_t mflags2 = 0;
+            int32_t mid = 0;
+            if (cegram_tl_read_uint32(resp, resp_len, &off, &mflags) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint32(resp, resp_len, &off, &mflags2) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint32(resp, resp_len, &off, (uint32_t *)&mid) != CEGRAM_OK) continue;
+
+            out_messages[parsed].id = mid;
+            out_messages[parsed].is_outgoing = (mflags & (1 << 1)) ? 1 : 0;
+            out_messages[parsed].from_id = 0;
+
+            if (mflags & (1 << 8)) {
+                uint32_t pctor = 0;
+                uint64_t pid = 0;
+                cegram_tl_read_uint32(resp, resp_len, &off, &pctor);
+                cegram_tl_read_uint64(resp, resp_len, &off, &pid);
+                out_messages[parsed].from_id = pid;
+            }
+
+            if (mflags & (1 << 29)) off += 4;
+            if (mflags2 & (1 << 12)) {
+                char tmp[128];
+                cegram_tl_read_string(resp, resp_len, &off, tmp, sizeof(tmp));
+            }
+
+            uint32_t peer_ctor = 0;
+            uint64_t peer_target_id = 0;
+            cegram_tl_read_uint32(resp, resp_len, &off, &peer_ctor);
+            cegram_tl_read_uint64(resp, resp_len, &off, &peer_target_id);
+
+            if (mflags & (1 << 28)) off += 12;
+            if (mflags & (1 << 2)) {
+                uint32_t fflags = 0;
+                cegram_tl_read_uint32(resp, resp_len, &off, &fflags);
+                if (fflags & (1 << 0)) off += 12;
+                if (fflags & (1 << 5)) { char tmp[128]; cegram_tl_read_string(resp, resp_len, &off, tmp, sizeof(tmp)); }
+                off += 4;
+                if (fflags & (1 << 2)) off += 4;
+                if (fflags & (1 << 3)) { char tmp[128]; cegram_tl_read_string(resp, resp_len, &off, tmp, sizeof(tmp)); }
+                if (fflags & (1 << 4)) off += 16;
+                if (fflags & (1 << 8)) off += 12;
+                if (fflags & (1 << 9)) { char tmp[128]; cegram_tl_read_string(resp, resp_len, &off, tmp, sizeof(tmp)); }
+                if (fflags & (1 << 10)) off += 4;
+                if (fflags & (1 << 6)) { char tmp[128]; cegram_tl_read_string(resp, resp_len, &off, tmp, sizeof(tmp)); }
+            }
+            if (mflags & (1 << 11)) off += 8;
+            if (mflags2 & (1 << 0)) off += 8;
+            if (mflags2 & (1 << 19)) off += 12;
+
+            if (mflags & (1 << 3)) {
+                uint32_t rctor = 0;
+                cegram_tl_read_uint32(resp, resp_len, &off, &rctor);
+                if (rctor == 0xe5af939) {
+                    off += 12 + 4;
+                } else {
+                    uint32_t rflags = 0;
+                    cegram_tl_read_uint32(resp, resp_len, &off, &rflags);
+                    if (rflags & (1 << 4)) off += 4;
+                    if (rflags & (1 << 0)) off += 12;
+                    if (rflags & (1 << 1)) off += 4;
+                    if (rflags & (1 << 6)) { char tmp[128]; cegram_tl_read_string(resp, resp_len, &off, tmp, sizeof(tmp)); }
+                    if (rflags & (1 << 10)) off += 4;
+                    if (rflags & (1 << 11)) off += 4;
+                    if (rflags & (1 << 12)) { uint32_t blen = 0; cegram_tl_read_uint32(resp, resp_len, &off, &blen); off += blen; }
+                }
+            }
+
+            cegram_tl_read_uint32(resp, resp_len, &off, (uint32_t *)&out_messages[parsed].date);
+            cegram_tl_read_string(resp, resp_len, &off, out_messages[parsed].message, sizeof(out_messages[parsed].message));
+            parsed++;
+        }
+    }
+
+    *out_count = parsed;
+    free(resp);
+    return CEGRAM_OK;
+}
+
+int cegram_messages_get_dialogs(cegram_transport_t *t,
+                                cegram_session_t *session,
+                                int32_t limit,
+                                cegram_dialog_item_t *out_dialogs,
+                                size_t max_dialogs,
+                                size_t *out_count,
+                                cegram_rpc_error_t *out_error) {
+    uint8_t raw_req[512];
+    size_t raw_len = 0;
+    uint8_t req[512];
+    size_t req_len = 0;
+    uint8_t *resp = NULL;
+    size_t resp_len = 0;
+    size_t max_resp_len = 65536;
+    uint32_t ctor = TG_CONSTRUCTOR_MESSAGES_GET_DIALOGS;
+    size_t off;
+    size_t scan;
+    size_t parsed = 0;
+    size_t k;
+    int res;
+
+    if (!t || !session || !out_count) return CEGRAM_ERR_GENERIC;
+    *out_count = 0;
+    if (out_error) memset(out_error, 0, sizeof(*out_error));
+
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, ctor);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, 0);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, 0);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, 0);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, TG_CONSTRUCTOR_INPUT_PEER_EMPTY);
+    cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, (uint32_t)limit);
+    cegram_tl_write_uint64(raw_req, sizeof(raw_req), &raw_len, 0ULL);
+
+    cegram_tl_write_uint32(req, sizeof(req), &req_len, TG_CONSTRUCTOR_INVOKE_WITH_LAYER);
+    cegram_tl_write_uint32(req, sizeof(req), &req_len, 184);
+    memcpy(req + req_len, raw_req, raw_len);
+    req_len += raw_len;
+
+    resp = (uint8_t *)malloc(max_resp_len);
+    if (!resp) return CEGRAM_ERR_GENERIC;
+
+    res = cegram_mtproto_invoke(t, session, req, req_len, resp, max_resp_len, &resp_len);
+    if (res != CEGRAM_OK) {
+        free(resp);
+        return res;
+    }
+
+    if (resp_len < 4) {
+        free(resp);
+        return CEGRAM_ERR_SCHEMA;
+    }
+
+    off = 0;
+    uint32_t resp_ctor = 0;
+    cegram_tl_read_uint32(resp, resp_len, &off, &resp_ctor);
+
+    if (resp_ctor == TG_CONSTRUCTOR_RPC_ERROR) {
+        if (out_error) {
+            cegram_tl_read_uint32(resp, resp_len, &off, (uint32_t *)&out_error->error_code);
+            cegram_tl_read_string(resp, resp_len, &off, out_error->error_message, sizeof(out_error->error_message));
+        }
+        free(resp);
+        return CEGRAM_ERR_SCHEMA;
+    }
+
+    for (scan = 4; scan + 4 <= resp_len && parsed < max_dialogs; scan += 4) {
+        uint32_t tag = 0;
+        memcpy(&tag, resp + scan, 4);
+        if (tag == TG_CONSTRUCTOR_DIALOG) {
+            off = scan + 4;
+            uint32_t dflags = 0;
+            uint32_t peer_ctor = 0;
+            uint64_t peer_id = 0;
+            int32_t top_msg = 0;
+            int32_t read_in = 0;
+            int32_t read_out = 0;
+            int32_t unread = 0;
+
+            if (cegram_tl_read_uint32(resp, resp_len, &off, &dflags) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint32(resp, resp_len, &off, &peer_ctor) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint64(resp, resp_len, &off, &peer_id) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint32(resp, resp_len, &off, (uint32_t *)&top_msg) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint32(resp, resp_len, &off, (uint32_t *)&read_in) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint32(resp, resp_len, &off, (uint32_t *)&read_out) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint32(resp, resp_len, &off, (uint32_t *)&unread) != CEGRAM_OK) continue;
+
+            int peer_type = CEGRAM_PEER_EMPTY;
+            if (peer_ctor == TG_CONSTRUCTOR_PEER_USER || peer_ctor == TG_CONSTRUCTOR_PEER_USER_OLD) {
+                peer_type = CEGRAM_PEER_USER;
+            } else if (peer_ctor == TG_CONSTRUCTOR_PEER_CHAT || peer_ctor == TG_CONSTRUCTOR_PEER_CHAT_OLD) {
+                peer_type = CEGRAM_PEER_CHAT;
+            } else if (peer_ctor == TG_CONSTRUCTOR_PEER_CHANNEL || peer_ctor == TG_CONSTRUCTOR_PEER_CHANNEL_OLD) {
+                peer_type = CEGRAM_PEER_CHANNEL;
+            }
+
+            if (peer_type != CEGRAM_PEER_EMPTY) {
+                out_dialogs[parsed].peer_id = peer_id;
+                out_dialogs[parsed].peer_type = peer_type;
+                out_dialogs[parsed].access_hash = 0;
+                out_dialogs[parsed].unread_count = unread;
+                out_dialogs[parsed].date = 0;
+                out_dialogs[parsed].last_message[0] = '\0';
+                if (peer_type == CEGRAM_PEER_USER) {
+                    snprintf(out_dialogs[parsed].title, sizeof(out_dialogs[parsed].title), "User %llu", (unsigned long long)peer_id);
+                } else if (peer_type == CEGRAM_PEER_CHANNEL) {
+                    snprintf(out_dialogs[parsed].title, sizeof(out_dialogs[parsed].title), "Channel %llu", (unsigned long long)peer_id);
+                } else {
+                    snprintf(out_dialogs[parsed].title, sizeof(out_dialogs[parsed].title), "Chat %llu", (unsigned long long)peer_id);
+                }
+                parsed++;
+            }
+        }
+    }
+
+    for (scan = 4; scan + 4 <= resp_len; scan += 4) {
+        uint32_t tag = 0;
+        memcpy(&tag, resp + scan, 4);
+        if (tag == TG_CONSTRUCTOR_USER || tag == TG_CONSTRUCTOR_USER_OLD) {
+            off = scan + 4;
+            uint32_t uflags = 0;
+            uint32_t uflags2 = 0;
+            uint64_t uid = 0;
+            uint64_t uhash = 0;
+            char first[64] = "";
+            char last[64] = "";
+
+            if (cegram_tl_read_uint32(resp, resp_len, &off, &uflags) != CEGRAM_OK) continue;
+            if (tag == TG_CONSTRUCTOR_USER) {
+                if (cegram_tl_read_uint32(resp, resp_len, &off, &uflags2) != CEGRAM_OK) continue;
+            }
+            if (cegram_tl_read_uint64(resp, resp_len, &off, &uid) != CEGRAM_OK) continue;
+
+            if (uflags & (1 << 0)) cegram_tl_read_uint64(resp, resp_len, &off, &uhash);
+            if (uflags & (1 << 1)) cegram_tl_read_string(resp, resp_len, &off, first, sizeof(first));
+            if (uflags & (1 << 2)) cegram_tl_read_string(resp, resp_len, &off, last, sizeof(last));
+
+            for (k = 0; k < parsed; k++) {
+                if (out_dialogs[k].peer_id == uid && out_dialogs[k].peer_type == CEGRAM_PEER_USER) {
+                    out_dialogs[k].access_hash = uhash;
+                    if (first[0] != '\0') {
+                        if (last[0] != '\0') {
+                            snprintf(out_dialogs[k].title, sizeof(out_dialogs[k].title), "%s %s", first, last);
+                        } else {
+                            snprintf(out_dialogs[k].title, sizeof(out_dialogs[k].title), "%s", first);
+                        }
+                    }
+                    break;
+                }
+            }
+        } else if (tag == TG_CONSTRUCTOR_CHANNEL) {
+            off = scan + 4;
+            uint32_t cflags = 0;
+            uint32_t cflags2 = 0;
+            uint64_t cid = 0;
+            uint64_t chash = 0;
+            char ctitle[128] = "";
+
+            if (cegram_tl_read_uint32(resp, resp_len, &off, &cflags) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint32(resp, resp_len, &off, &cflags2) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint64(resp, resp_len, &off, &cid) != CEGRAM_OK) continue;
+            if (cflags & (1 << 13)) cegram_tl_read_uint64(resp, resp_len, &off, &chash);
+            cegram_tl_read_string(resp, resp_len, &off, ctitle, sizeof(ctitle));
+
+            for (k = 0; k < parsed; k++) {
+                if (out_dialogs[k].peer_id == cid && out_dialogs[k].peer_type == CEGRAM_PEER_CHANNEL) {
+                    out_dialogs[k].access_hash = chash;
+                    if (ctitle[0] != '\0') {
+                        snprintf(out_dialogs[k].title, sizeof(out_dialogs[k].title), "%s", ctitle);
+                    }
+                    break;
+                }
+            }
+        } else if (tag == TG_CONSTRUCTOR_CHAT) {
+            off = scan + 4;
+            uint32_t cflags = 0;
+            uint64_t cid = 0;
+            char ctitle[128] = "";
+
+            if (cegram_tl_read_uint32(resp, resp_len, &off, &cflags) != CEGRAM_OK) continue;
+            if (cegram_tl_read_uint64(resp, resp_len, &off, &cid) != CEGRAM_OK) continue;
+            cegram_tl_read_string(resp, resp_len, &off, ctitle, sizeof(ctitle));
+
+            for (k = 0; k < parsed; k++) {
+                if (out_dialogs[k].peer_id == cid && out_dialogs[k].peer_type == CEGRAM_PEER_CHAT) {
+                    if (ctitle[0] != '\0') {
+                        snprintf(out_dialogs[k].title, sizeof(out_dialogs[k].title), "%s", ctitle);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    *out_count = parsed;
+    free(resp);
     return CEGRAM_OK;
 }

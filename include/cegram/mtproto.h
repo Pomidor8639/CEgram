@@ -41,7 +41,44 @@
 #define TG_CONSTRUCTOR_AUTH_SIGN_UP_REQ     0x10500a36
 #define TG_CONSTRUCTOR_CODE_SETTINGS        0xad253d78
 
-#define TG_CONSTRUCTOR_USER                 0xd23c81a3
+#define TG_CONSTRUCTOR_USER                 0xb1b8cc83
+#define TG_CONSTRUCTOR_USER_OLD             0xd23c81a3
+#define TG_CONSTRUCTOR_CHAT                 0x41cbf256
+#define TG_CONSTRUCTOR_CHANNEL              0x7ad15240
+#define TG_CONSTRUCTOR_CHAT_FORBIDDEN       0x6592a1a7
+#define TG_CONSTRUCTOR_CHANNEL_FORBIDDEN    0x17d493d5
+
+#define TG_CONSTRUCTOR_INPUT_PEER_EMPTY     0x7f3b18ea
+#define TG_CONSTRUCTOR_INPUT_PEER_SELF      0x7da07ec9
+#define TG_CONSTRUCTOR_INPUT_PEER_CHAT      0x35a95cb9
+#define TG_CONSTRUCTOR_INPUT_PEER_USER      0xdde8a54c
+#define TG_CONSTRUCTOR_INPUT_PEER_CHANNEL   0x27bcbbfc
+
+#define TG_CONSTRUCTOR_PEER_USER            0x59511722
+#define TG_CONSTRUCTOR_PEER_CHAT            0x36c6019a
+#define TG_CONSTRUCTOR_PEER_CHANNEL         0xa2a5371e
+
+#define TG_CONSTRUCTOR_PEER_USER_OLD        0x59511761
+#define TG_CONSTRUCTOR_PEER_CHAT_OLD        0x36c6088a
+#define TG_CONSTRUCTOR_PEER_CHANNEL_OLD     0xa284d356
+
+#define TG_CONSTRUCTOR_MESSAGES_GET_DIALOGS 0xa0f4cb4f
+#define TG_CONSTRUCTOR_MESSAGES_DIALOGS     0x15ba6c40
+#define TG_CONSTRUCTOR_MESSAGES_DIALOGS_SL  0x71e094f3
+#define TG_CONSTRUCTOR_MESSAGES_GET_HISTORY 0x4423e6c5
+#define TG_CONSTRUCTOR_MESSAGES_MESSAGES    0x1d73e7ea
+#define TG_CONSTRUCTOR_MESSAGES_MESSAGES_SL 0x5f206716
+#define TG_CONSTRUCTOR_MESSAGES_SEND_MSG    0xfef48f62
+
+#define TG_CONSTRUCTOR_MESSAGE              0x7600b9d3
+#define TG_CONSTRUCTOR_MESSAGE_EMPTY        0x90a6ca84
+#define TG_CONSTRUCTOR_DIALOG               0xfc89f7f3
+
+#define CEGRAM_PEER_EMPTY   0
+#define CEGRAM_PEER_SELF    1
+#define CEGRAM_PEER_USER    2
+#define CEGRAM_PEER_CHAT    3
+#define CEGRAM_PEER_CHANNEL 4
 
 typedef struct {
     uint8_t nonce[16];
@@ -97,6 +134,32 @@ typedef struct {
     char username[128];
     char phone[32];
 } cegram_user_t;
+
+typedef struct {
+    uint64_t peer_id;
+    int peer_type;
+    uint64_t access_hash;
+    char title[128];
+    char last_message[256];
+    int32_t date;
+    int32_t unread_count;
+} cegram_dialog_item_t;
+
+typedef struct {
+    int32_t id;
+    uint64_t from_id;
+    int32_t date;
+    char message[1024];
+    int is_outgoing;
+} cegram_message_item_t;
+
+typedef struct {
+    int id;
+    const char *ip;
+    uint16_t port;
+} cegram_dc_info_t;
+
+const cegram_dc_info_t *cegram_get_dc_info(int dc_id);
 
 int cegram_mtproto_wrap_init_connection(uint8_t *buf, size_t max_buf_len, size_t *out_len,
                                         int32_t layer, int32_t api_id,
@@ -172,5 +235,32 @@ int cegram_auth_sign_in(cegram_transport_t *t,
                         const char *phone_code,
                         cegram_user_t *out_user,
                         cegram_rpc_error_t *out_error);
+
+int cegram_messages_get_dialogs(cegram_transport_t *t,
+                                cegram_session_t *session,
+                                int32_t limit,
+                                cegram_dialog_item_t *out_dialogs,
+                                size_t max_dialogs,
+                                size_t *out_count,
+                                cegram_rpc_error_t *out_error);
+
+int cegram_messages_get_history(cegram_transport_t *t,
+                                cegram_session_t *session,
+                                int peer_type,
+                                uint64_t peer_id,
+                                uint64_t access_hash,
+                                int32_t limit,
+                                cegram_message_item_t *out_messages,
+                                size_t max_messages,
+                                size_t *out_count,
+                                cegram_rpc_error_t *out_error);
+
+int cegram_messages_send_message(cegram_transport_t *t,
+                                 cegram_session_t *session,
+                                 int peer_type,
+                                 uint64_t peer_id,
+                                 uint64_t access_hash,
+                                 const char *text,
+                                 cegram_rpc_error_t *out_error);
 
 #endif
