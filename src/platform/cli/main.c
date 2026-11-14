@@ -417,10 +417,43 @@ int main(int argc, char **argv) {
                 printf("    Telegram Error %d: %s\n", err.error_code, err.error_message);
             }
         }
+    } else if (argc >= 5 && strcmp(argv[1], "signin") == 0) {
+        const char *phone = argv[2];
+        const char *phone_code_hash = argv[3];
+        const char *code = argv[4];
+        cegram_user_t user;
+        cegram_rpc_error_t err;
+        memset(&err, 0, sizeof(err));
+        memset(&user, 0, sizeof(user));
+
+        printf("=========================================\n");
+        printf("   TESTING USER AUTH: auth.signIn        \n");
+        printf("=========================================\n\n");
+        printf("[*] Phone Number:    %s\n", phone);
+        printf("[*] Phone Code Hash: %s\n", phone_code_hash);
+        printf("[*] Code:            %s\n\n", code);
+        printf("[*] Submitting verification code via auth.signIn...\n");
+
+        res = cegram_auth_sign_in(&transport, &session, phone, phone_code_hash, code, &user, &err);
+        if (res == CEGRAM_OK) {
+            printf("\n[+++] MASTER MILESTONE: AUTHENTICATION SUCCESSFUL!\n");
+            printf("      User ID:   %llu\n", (unsigned long long)user.user_id);
+            printf("      First:     %s\n", user.first_name);
+            printf("      Last:      %s\n", user.last_name);
+            printf("      Username:  @%s\n", user.username);
+            printf("      Phone:     +%s\n\n", user.phone);
+            cegram_session_save(&session, "session.dat");
+        } else {
+            printf("\n[!] auth.signIn failed (error: %d)\n", res);
+            if (err.error_code != 0) {
+                printf("    Telegram Error %d: %s\n\n", err.error_code, err.error_message);
+            }
+        }
     } else {
         printf("[*] User Authorization & Messaging Usage:\n");
         printf("    cegram_cli.exe sendcode <phone_number> [api_id] [api_hash]\n");
         printf("    cegram_cli.exe login <phone_number> [api_id] [api_hash]\n");
+        printf("    cegram_cli.exe signin <phone_number> <phone_code_hash> <code>\n");
         printf("    cegram_cli.exe dialogs [limit]\n");
         printf("    cegram_cli.exe history <peer_type: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> [limit]\n");
         printf("    cegram_cli.exe send <peer_type: 1=Self, 2=User, 3=Chat, 4=Channel> <peer_id> <access_hash_hex> <text>\n\n");
