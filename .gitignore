@@ -1,0 +1,31 @@
+# Binaries & Object files
+*.obj
+*.o
+*.lib
+*.a
+*.exp
+*.dll
+*.so
+*.exe
+
+# Build directories
+build/
+bin/
+obj/
+
+# Visual Studio / IDE files
+.vs/
+*.sln.docstates
+*.suo
+*.user
+*.vcxproj.user
+Debug/
+Release/
+x64/
+x86/
+ARM/
+
+# Temporary & Log files
+*.log
+*.tmp
+session.dat
