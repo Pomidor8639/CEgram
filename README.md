@@ -68,8 +68,14 @@
 * [x] Отправка `req_DH_params` и успешное получение `server_DH_params_ok`.
 * [x] Симметричное шифрование AES-256-IGE.
 * [x] Завершение создания ключа авторизации (`set_client_DH_params` -> `dh_gen_ok`).
-* [ ] Шифрование пользовательских сессий MTProto 2.0.
-* [ ] Базовые методы API авторизации и отправки сообщений.
+* [x] Шифрование пользовательских сессий MTProto 2.0 (AES-256-IGE + SHA-256 msg_key).
+* [x] Обработка служебных сообщений MTProto (`new_session_created`, `bad_server_salt`, `msg_container`, `rpc_result`).
+* [x] Сохранение и загрузка сессии (`session.dat`) без повторения рукопожатия.
+* [x] Автоматическая инициализация сессии (`invokeWithLayer` Layer 184 + `initConnection`).
+* [x] TL-сериализатор и парсер базовых типов Type Language.
+* [x] Вызовы API методов: `help.getNearestDc`, `auth.sendCode`, `auth.signIn`.
+* [ ] Авторизация пользователя (2FA/облачный пароль SRP-6A).
+* [ ] Получение диалогов и сообщений (`messages.getDialogs`, `messages.getHistory`, `messages.sendMessage`).
 * [ ] Графический интерфейс Win32 GDI для Windows CE.
 
 ---

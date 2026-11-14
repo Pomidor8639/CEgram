@@ -32,6 +32,7 @@
 #define CEGRAM_ERR_NETWORK -2
 #define CEGRAM_ERR_CRYPTO  -3
 #define CEGRAM_ERR_SCHEMA  -4
+#define CEGRAM_ERR_BUFFER_TOO_SMALL -5
 
 static inline uint32_t cegram_le32(uint32_t val) {
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
