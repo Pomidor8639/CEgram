@@ -100,11 +100,13 @@ int cegram_transport_send(cegram_transport_t *t, const uint8_t *data, size_t len
 
     sent = send(t->sock, (const char *)header, (int)header_len, 0);
     if (sent != (int)header_len) {
+        t->is_connected = 0;
         return CEGRAM_ERR_NETWORK;
     }
 
     sent = send(t->sock, (const char *)data, (int)len, 0);
     if (sent != (int)len) {
+        t->is_connected = 0;
         return CEGRAM_ERR_NETWORK;
     }
 
@@ -131,6 +133,7 @@ int cegram_transport_recv(cegram_transport_t *t, uint8_t *buf, size_t max_len, s
     }
 
     if (recv_all(t->sock, &first_byte, 1) != CEGRAM_OK) {
+        t->is_connected = 0;
         return CEGRAM_ERR_NETWORK;
     }
 
@@ -139,10 +142,12 @@ int cegram_transport_recv(cegram_transport_t *t, uint8_t *buf, size_t max_len, s
     } else if (first_byte == 0x7f) {
         uint8_t len_bytes[3];
         if (recv_all(t->sock, len_bytes, 3) != CEGRAM_OK) {
+            t->is_connected = 0;
             return CEGRAM_ERR_NETWORK;
         }
         words = (size_t)len_bytes[0] | ((size_t)len_bytes[1] << 8) | ((size_t)len_bytes[2] << 16);
     } else {
+        t->is_connected = 0;
         return CEGRAM_ERR_NETWORK;
     }
 
@@ -152,6 +157,7 @@ int cegram_transport_recv(cegram_transport_t *t, uint8_t *buf, size_t max_len, s
     }
 
     if (recv_all(t->sock, buf, payload_len) != CEGRAM_OK) {
+        t->is_connected = 0;
         return CEGRAM_ERR_NETWORK;
     }
 

@@ -30,6 +30,7 @@ static HINSTANCE g_hInstance = NULL;
 static HWND g_hMainWnd = NULL;
 static cegram_transport_t g_transport;
 static cegram_session_t g_session;
+static int g_current_dc = 2;
 static int g_network_connected = 0;
 static int g_logged_in = 0;
 static char g_phone_code_hash[128];
@@ -111,6 +112,7 @@ static int init_network_and_handshake(int dc_id) {
     char app_sess_main[MAX_PATH];
 
     if (!dc) return CEGRAM_ERR_GENERIC;
+    g_current_dc = dc_id;
 
     if (g_network_connected) {
         cegram_transport_disconnect(&g_transport);
@@ -129,7 +131,9 @@ static int init_network_and_handshake(int dc_id) {
     if (cegram_session_load(&g_session, app_sess) == CEGRAM_OK ||
         cegram_session_load(&g_session, sess_file) == CEGRAM_OK ||
         (dc_id == 2 && (cegram_session_load(&g_session, app_sess_main) == CEGRAM_OK ||
-                        cegram_session_load(&g_session, "session.dat") == CEGRAM_OK))) {
+                        cegram_session_load(&g_session, "session.dat") == CEGRAM_OK ||
+                        cegram_session_load(&g_session, "../session.dat") == CEGRAM_OK ||
+                        cegram_session_load(&g_session, "..\\session.dat") == CEGRAM_OK))) {
         cegram_random_bytes((uint8_t *)&g_session.session_id, 8);
         g_session.seq_no = 0;
         return CEGRAM_OK;
@@ -170,6 +174,8 @@ static int init_network_and_handshake(int dc_id) {
         get_app_dir_file("session.dat", app_sess_main, sizeof(app_sess_main));
         cegram_session_save(&g_session, app_sess_main);
         cegram_session_save(&g_session, "session.dat");
+        cegram_session_save(&g_session, "../session.dat");
+        cegram_session_save(&g_session, "..\\session.dat");
     }
 
     return CEGRAM_OK;
@@ -253,6 +259,12 @@ static void load_dialogs(void) {
     SendMessage(g_hChatList, LB_RESETCONTENT, 0, 0);
 
     res = cegram_messages_get_dialogs(&g_transport, &g_session, 30, g_dialogs, 64, &count, &err);
+    if (res == CEGRAM_ERR_NETWORK) {
+        if (init_network_and_handshake(g_current_dc) == CEGRAM_OK) {
+            memset(&err, 0, sizeof(err));
+            res = cegram_messages_get_dialogs(&g_transport, &g_session, 30, g_dialogs, 64, &count, &err);
+        }
+    }
     if (res == CEGRAM_OK) {
         g_dialog_count = count;
         for (i = 0; i < count; i++) {
@@ -296,6 +308,16 @@ static void load_history(int dialog_idx) {
                                       g_dialogs[dialog_idx].peer_id,
                                       g_dialogs[dialog_idx].access_hash,
                                       30, messages, 50, &count, &err);
+    if (res == CEGRAM_ERR_NETWORK) {
+        if (init_network_and_handshake(g_current_dc) == CEGRAM_OK) {
+            memset(&err, 0, sizeof(err));
+            res = cegram_messages_get_history(&g_transport, &g_session,
+                                              g_dialogs[dialog_idx].peer_type,
+                                              g_dialogs[dialog_idx].peer_id,
+                                              g_dialogs[dialog_idx].access_hash,
+                                              30, messages, 50, &count, &err);
+        }
+    }
     if (res == CEGRAM_OK) {
         for (i = count; i > 0; i--) {
             size_t idx = i - 1;
@@ -338,6 +360,16 @@ static void send_chat_message(void) {
                                        g_dialogs[g_current_dialog_index].peer_id,
                                        g_dialogs[g_current_dialog_index].access_hash,
                                        text_utf8, &err);
+    if (res == CEGRAM_ERR_NETWORK) {
+        if (init_network_and_handshake(g_current_dc) == CEGRAM_OK) {
+            memset(&err, 0, sizeof(err));
+            res = cegram_messages_send_message(&g_transport, &g_session,
+                                               g_dialogs[g_current_dialog_index].peer_type,
+                                               g_dialogs[g_current_dialog_index].peer_id,
+                                               g_dialogs[g_current_dialog_index].access_hash,
+                                               text_utf8, &err);
+        }
+    }
     if (res == CEGRAM_OK) {
         SetWindowText(g_hChatInput, TEXT(""));
         load_history(g_current_dialog_index);
@@ -437,14 +469,21 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 tchar_to_char(phone_w, phone_utf8, sizeof(phone_utf8));
 
                 strncpy(g_saved_phone, phone_utf8, sizeof(g_saved_phone));
-                set_status(TEXT("Sending verification code..."));
+                set_status(TEXT("Connecting to Telegram..."));
                 memset(&err, 0, sizeof(err));
                 memset(&sent_code, 0, sizeof(sent_code));
 
+                if (init_network_and_handshake(g_current_dc) != CEGRAM_OK) {
+                    set_status(TEXT("Network connection failed!"));
+                    break;
+                }
+
+                set_status(TEXT("Sending verification code..."));
                 res = cegram_auth_send_code(&g_transport, &g_session, phone_utf8, CEGRAM_DEFAULT_API_ID, CEGRAM_DEFAULT_API_HASH, &sent_code, &err);
                 if (res != CEGRAM_OK && err.error_code == 303 && strncmp(err.error_message, "PHONE_MIGRATE_", 14) == 0) {
                     int target_dc = atoi(err.error_message + 14);
                     set_status(TEXT("Migrating to another DC..."));
+                    g_current_dc = target_dc;
                     if (init_network_and_handshake(target_dc) == CEGRAM_OK) {
                         memset(&err, 0, sizeof(err));
                         memset(&sent_code, 0, sizeof(sent_code));
@@ -457,7 +496,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     set_status(sent_code.is_app_code ? TEXT("Code sent to Telegram app!") : TEXT("Code sent via SMS!"));
                 } else {
                     TCHAR err_buf[128];
-                    _sntprintf(err_buf, sizeof(err_buf) / sizeof(TCHAR), TEXT("Send code error: %hs"), err.error_message);
+                    if (err.error_message[0] != '\0') {
+                        _sntprintf(err_buf, sizeof(err_buf) / sizeof(TCHAR), TEXT("Send code error: %hs"), err.error_message);
+                    } else {
+                        _sntprintf(err_buf, sizeof(err_buf) / sizeof(TCHAR), TEXT("Send code error: network code %d"), res);
+                    }
                     set_status(err_buf);
                 }
             } else if (wmId == IDC_LOGIN_SIGN_IN) {
@@ -470,16 +513,24 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 GetWindowText(g_hCodeEdit, code_w, sizeof(code_w) / sizeof(TCHAR));
                 tchar_to_char(code_w, code_utf8, sizeof(code_utf8));
 
-                set_status(TEXT("Signing in..."));
+                set_status(TEXT("Connecting to Telegram..."));
                 memset(&err, 0, sizeof(err));
                 memset(&user, 0, sizeof(user));
 
+                if (init_network_and_handshake(g_current_dc) != CEGRAM_OK) {
+                    set_status(TEXT("Network connection failed!"));
+                    break;
+                }
+
+                set_status(TEXT("Signing in..."));
                 res = cegram_auth_sign_in(&g_transport, &g_session, g_saved_phone, g_phone_code_hash, code_utf8, &user, &err);
                 if (res == CEGRAM_OK) {
                     char app_sess_main[MAX_PATH];
                     get_app_dir_file("session.dat", app_sess_main, sizeof(app_sess_main));
                     cegram_session_save(&g_session, app_sess_main);
                     cegram_session_save(&g_session, "session.dat");
+                    cegram_session_save(&g_session, "../session.dat");
+                    cegram_session_save(&g_session, "..\\session.dat");
                     g_logged_in = 1;
                     show_login_view(0);
                     show_chat_view(1);
@@ -488,7 +539,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     set_status(TEXT("Logged in!"));
                 } else {
                     TCHAR err_buf[128];
-                    _sntprintf(err_buf, sizeof(err_buf) / sizeof(TCHAR), TEXT("Sign in error: %hs"), err.error_message);
+                    if (err.error_message[0] != '\0') {
+                        _sntprintf(err_buf, sizeof(err_buf) / sizeof(TCHAR), TEXT("Sign in error: %hs"), err.error_message);
+                    } else {
+                        _sntprintf(err_buf, sizeof(err_buf) / sizeof(TCHAR), TEXT("Sign in error: network code %d"), res);
+                    }
                     set_status(err_buf);
                 }
             } else if (wmId == IDC_CHAT_LIST && wmEvent == LBN_SELCHANGE) {
@@ -508,6 +563,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 char_to_tchar(app_sess_main, app_sess_w, MAX_PATH);
                 DeleteFile(app_sess_w);
                 DeleteFile(TEXT("session.dat"));
+                DeleteFile(TEXT("../session.dat"));
+                DeleteFile(TEXT("..\\session.dat"));
                 g_logged_in = 0;
                 show_chat_view(0);
                 show_login_view(1);
