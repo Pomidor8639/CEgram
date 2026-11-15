@@ -25,6 +25,7 @@
 #define IDC_CHAT_SEND_BTN     204
 #define IDC_CHAT_REFRESH_BTN  205
 #define IDC_CHAT_LOGOUT_BTN   206
+#define IDT_AUTO_REFRESH_TIMER 501
 
 static HINSTANCE g_hInstance = NULL;
 static HWND g_hMainWnd = NULL;
@@ -33,6 +34,7 @@ static cegram_session_t g_session;
 static int g_current_dc = 2;
 static int g_network_connected = 0;
 static int g_logged_in = 0;
+static int g_is_polling = 0;
 static char g_phone_code_hash[128];
 static char g_saved_phone[64];
 
@@ -253,53 +255,13 @@ static void layout_controls(HWND hwnd) {
     }
 }
 
-static void load_dialogs(void) {
-    cegram_rpc_error_t err;
-    size_t count = 0;
-    size_t i;
-    int res;
-
-    memset(&err, 0, sizeof(err));
-    SendMessage(g_hChatList, LB_RESETCONTENT, 0, 0);
-
-    res = cegram_messages_get_dialogs(&g_transport, &g_session, 30, g_dialogs, 64, &count, &err);
-    if (res == CEGRAM_ERR_NETWORK) {
-        if (init_network_and_handshake(g_current_dc) == CEGRAM_OK) {
-            memset(&err, 0, sizeof(err));
-            res = cegram_messages_get_dialogs(&g_transport, &g_session, 30, g_dialogs, 64, &count, &err);
-        }
-    }
-    if (res == CEGRAM_OK) {
-        g_dialog_count = count;
-        for (i = 0; i < count; i++) {
-            TCHAR item_text[160];
-            TCHAR title_w[128];
-            char_to_tchar(g_dialogs[i].title, title_w, sizeof(title_w) / sizeof(TCHAR));
-            if (g_dialogs[i].unread_count > 0) {
-                _sntprintf(item_text, sizeof(item_text) / sizeof(TCHAR), TEXT("%s (%d)"), title_w, g_dialogs[i].unread_count);
-            } else {
-                _sntprintf(item_text, sizeof(item_text) / sizeof(TCHAR), TEXT("%s"), title_w);
-            }
-            SendMessage(g_hChatList, LB_ADDSTRING, 0, (LPARAM)item_text);
-        }
-        if (count > 0) {
-            SendMessage(g_hChatList, LB_SETCURSEL, 0, 0);
-            SendMessage(g_hMainWnd, WM_COMMAND, MAKEWPARAM(IDC_CHAT_LIST, LBN_SELCHANGE), (LPARAM)g_hChatList);
-        }
-    } else {
-        TCHAR err_buf[128];
-        _sntprintf(err_buf, sizeof(err_buf) / sizeof(TCHAR), TEXT("Failed to load dialogs (%d)"), res);
-        set_status(err_buf);
-    }
-}
-
-static void load_history(int dialog_idx) {
+static void load_history_ex(int dialog_idx, int is_manual) {
     cegram_message_item_t messages[50];
     size_t count = 0;
     cegram_rpc_error_t err;
     int res;
     size_t i;
-    TCHAR total_text[4096];
+    TCHAR total_text[8192];
     size_t text_off = 0;
 
     if (dialog_idx < 0 || (size_t)dialog_idx >= g_dialog_count) return;
@@ -337,12 +299,116 @@ static void load_history(int dialog_idx) {
                 text_off += llen;
             }
         }
-        SetWindowText(g_hChatHistory, total_text);
-        SendMessage(g_hChatHistory, EM_SETSEL, (WPARAM)text_off, (LPARAM)text_off);
-        SendMessage(g_hChatHistory, EM_SCROLLCARET, 0, 0);
-    } else {
+        TCHAR current_text[8192];
+        GetWindowText(g_hChatHistory, current_text, sizeof(current_text) / sizeof(TCHAR));
+        if (_tcscmp(current_text, total_text) != 0) {
+            SetWindowText(g_hChatHistory, total_text);
+            SendMessage(g_hChatHistory, EM_SETSEL, (WPARAM)text_off, (LPARAM)text_off);
+            SendMessage(g_hChatHistory, EM_SCROLLCARET, 0, 0);
+        }
+    } else if (is_manual) {
         SetWindowText(g_hChatHistory, TEXT("Failed to fetch messages."));
     }
+}
+
+static void load_history(int dialog_idx) {
+    load_history_ex(dialog_idx, 1);
+}
+
+static void poll_updates(int is_manual) {
+    cegram_dialog_item_t new_dialogs[64];
+    size_t new_count = 0;
+    cegram_rpc_error_t err;
+    int res;
+    size_t i;
+    int dialogs_changed = 0;
+    uint64_t cur_peer_id = 0;
+    int cur_peer_type = 0;
+    int had_selection = 0;
+
+    if (!g_logged_in) return;
+    if (g_is_polling) return;
+    g_is_polling = 1;
+
+    if (g_current_dialog_index >= 0 && (size_t)g_current_dialog_index < g_dialog_count) {
+        cur_peer_id = g_dialogs[g_current_dialog_index].peer_id;
+        cur_peer_type = g_dialogs[g_current_dialog_index].peer_type;
+        had_selection = 1;
+    }
+
+    memset(&err, 0, sizeof(err));
+    res = cegram_messages_get_dialogs(&g_transport, &g_session, 30, new_dialogs, 64, &new_count, &err);
+    if (res == CEGRAM_ERR_NETWORK) {
+        if (init_network_and_handshake(g_current_dc) == CEGRAM_OK) {
+            memset(&err, 0, sizeof(err));
+            res = cegram_messages_get_dialogs(&g_transport, &g_session, 30, new_dialogs, 64, &new_count, &err);
+        }
+    }
+
+    if (res == CEGRAM_OK) {
+        if (new_count != g_dialog_count) {
+            dialogs_changed = 1;
+        } else {
+            for (i = 0; i < new_count; i++) {
+                if (new_dialogs[i].peer_id != g_dialogs[i].peer_id ||
+                    new_dialogs[i].peer_type != g_dialogs[i].peer_type ||
+                    new_dialogs[i].unread_count != g_dialogs[i].unread_count ||
+                    strcmp(new_dialogs[i].title, g_dialogs[i].title) != 0) {
+                    dialogs_changed = 1;
+                    break;
+                }
+            }
+        }
+
+        if (dialogs_changed || is_manual || g_dialog_count == 0) {
+            int new_sel = -1;
+            memcpy(g_dialogs, new_dialogs, sizeof(cegram_dialog_item_t) * new_count);
+            g_dialog_count = new_count;
+            SendMessage(g_hChatList, LB_RESETCONTENT, 0, 0);
+            for (i = 0; i < new_count; i++) {
+                TCHAR item_text[160];
+                TCHAR title_w[128];
+                char_to_tchar(g_dialogs[i].title, title_w, sizeof(title_w) / sizeof(TCHAR));
+                if (g_dialogs[i].unread_count > 0) {
+                    _sntprintf(item_text, sizeof(item_text) / sizeof(TCHAR), TEXT("%s (%d)"), title_w, g_dialogs[i].unread_count);
+                } else {
+                    _sntprintf(item_text, sizeof(item_text) / sizeof(TCHAR), TEXT("%s"), title_w);
+                }
+                SendMessage(g_hChatList, LB_ADDSTRING, 0, (LPARAM)item_text);
+            }
+
+            if (had_selection) {
+                for (i = 0; i < new_count; i++) {
+                    if (g_dialogs[i].peer_id == cur_peer_id && g_dialogs[i].peer_type == cur_peer_type) {
+                        new_sel = (int)i;
+                        break;
+                    }
+                }
+            }
+            if (new_sel < 0 && new_count > 0) {
+                new_sel = 0;
+            }
+
+            if (new_sel >= 0) {
+                SendMessage(g_hChatList, LB_SETCURSEL, (WPARAM)new_sel, 0);
+                g_current_dialog_index = new_sel;
+            }
+        }
+
+        if (g_current_dialog_index >= 0 && (size_t)g_current_dialog_index < g_dialog_count) {
+            load_history_ex(g_current_dialog_index, is_manual);
+        }
+    } else if (is_manual) {
+        TCHAR err_buf[128];
+        _sntprintf(err_buf, sizeof(err_buf) / sizeof(TCHAR), TEXT("Failed to load dialogs (%d)"), res);
+        set_status(err_buf);
+    }
+
+    g_is_polling = 0;
+}
+
+static void load_dialogs(void) {
+    poll_updates(1);
 }
 
 static void send_chat_message(void) {
@@ -450,6 +516,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             } else {
                 set_status(TEXT("Network connection error!"));
             }
+            SetTimer(hwnd, IDT_AUTO_REFRESH_TIMER, 3000, NULL);
             break;
         }
 
@@ -578,7 +645,17 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             break;
         }
 
+        case WM_TIMER: {
+            if (wParam == IDT_AUTO_REFRESH_TIMER) {
+                if (g_logged_in) {
+                    poll_updates(0);
+                }
+            }
+            break;
+        }
+
         case WM_DESTROY: {
+            KillTimer(hwnd, IDT_AUTO_REFRESH_TIMER);
             if (g_network_connected) {
                 cegram_transport_disconnect(&g_transport);
                 g_network_connected = 0;
