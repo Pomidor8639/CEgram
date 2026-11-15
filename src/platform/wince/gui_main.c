@@ -23,7 +23,6 @@
 #define IDC_CHAT_HISTORY      202
 #define IDC_CHAT_INPUT        203
 #define IDC_CHAT_SEND_BTN     204
-#define IDC_CHAT_REFRESH_BTN  205
 #define IDC_CHAT_LOGOUT_BTN   206
 #define IDT_AUTO_REFRESH_TIMER 501
 
@@ -54,7 +53,6 @@ static HWND g_hChatList = NULL;
 static HWND g_hChatHistory = NULL;
 static HWND g_hChatInput = NULL;
 static HWND g_hChatSendBtn = NULL;
-static HWND g_hChatRefreshBtn = NULL;
 static HWND g_hChatLogoutBtn = NULL;
 
 static void char_to_tchar(const char *src, TCHAR *dst, size_t max_len) {
@@ -204,7 +202,6 @@ static void show_chat_view(int show) {
     ShowWindow(g_hChatHistory, cmd);
     ShowWindow(g_hChatInput, cmd);
     ShowWindow(g_hChatSendBtn, cmd);
-    ShowWindow(g_hChatRefreshBtn, cmd);
     ShowWindow(g_hChatLogoutBtn, cmd);
 }
 
@@ -242,8 +239,7 @@ static void layout_controls(HWND hwnd) {
         if (left_w > 260) left_w = 260;
 
         MoveWindow(g_hChatList, margin, margin, left_w, h - margin * 2 - 32, TRUE);
-        MoveWindow(g_hChatRefreshBtn, margin, h - margin - 26, left_w / 2 - 2, 26, TRUE);
-        MoveWindow(g_hChatLogoutBtn, margin + left_w / 2 + 2, h - margin - 26, left_w / 2 - 2, 26, TRUE);
+        MoveWindow(g_hChatLogoutBtn, margin, h - margin - 26, left_w, 26, TRUE);
 
         int right_x = margin + left_w + margin;
         int right_w = w - right_x - margin;
@@ -487,9 +483,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             g_hChatSendBtn = CreateWindow(TEXT("BUTTON"), TEXT("Send"),
                 WS_CHILD | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)IDC_CHAT_SEND_BTN, g_hInstance, NULL);
 
-            g_hChatRefreshBtn = CreateWindow(TEXT("BUTTON"), TEXT("Refresh"),
-                WS_CHILD | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)IDC_CHAT_REFRESH_BTN, g_hInstance, NULL);
-
             g_hChatLogoutBtn = CreateWindow(TEXT("BUTTON"), TEXT("Logout"),
                 WS_CHILD | BS_PUSHBUTTON, 0, 0, 0, 0, hwnd, (HMENU)IDC_CHAT_LOGOUT_BTN, g_hInstance, NULL);
 
@@ -516,7 +509,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             } else {
                 set_status(TEXT("Network connection error!"));
             }
-            SetTimer(hwnd, IDT_AUTO_REFRESH_TIMER, 3000, NULL);
+            SetTimer(hwnd, IDT_AUTO_REFRESH_TIMER, 1000, NULL);
             break;
         }
 
@@ -625,8 +618,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 }
             } else if (wmId == IDC_CHAT_SEND_BTN) {
                 send_chat_message();
-            } else if (wmId == IDC_CHAT_REFRESH_BTN) {
-                load_dialogs();
             } else if (wmId == IDC_CHAT_LOGOUT_BTN) {
                 char app_sess_main[MAX_PATH];
                 TCHAR app_sess_w[MAX_PATH];
