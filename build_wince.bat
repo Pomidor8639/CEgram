@@ -34,6 +34,7 @@ set PATH=%ARM_DIR%\bin;%PATH%
     "%ROOT_DIR%src\core\rsa_keys.c" ^
     "%ROOT_DIR%src\core\aes.c" ^
     "%ROOT_DIR%src\core\tl.c" ^
+    "%ROOT_DIR%src\core\tinf.c" ^
     "%ROOT_DIR%src\core\mtproto.c" ^
     "%ROOT_DIR%src\platform\wince\gui_main.c" ^
     -o "%ROOT_DIR%bin\cegram_gui_arm.exe" ^
@@ -62,6 +63,7 @@ echo [*] Compiling CEgram CLI for Windows CE (ARM)...
     "%ROOT_DIR%src\core\rsa_keys.c" ^
     "%ROOT_DIR%src\core\aes.c" ^
     "%ROOT_DIR%src\core\tl.c" ^
+    "%ROOT_DIR%src\core\tinf.c" ^
     "%ROOT_DIR%src\core\mtproto.c" ^
     "%ROOT_DIR%src\platform\cli\main.c" ^
     -o "%ROOT_DIR%bin\cegram_cli_arm.exe" ^
@@ -97,6 +99,7 @@ set PATH=%X86_DIR%\bin;%PATH%
     "%ROOT_DIR%src\core\rsa_keys.c" ^
     "%ROOT_DIR%src\core\aes.c" ^
     "%ROOT_DIR%src\core\tl.c" ^
+    "%ROOT_DIR%src\core\tinf.c" ^
     "%ROOT_DIR%src\core\mtproto.c" ^
     "%ROOT_DIR%src\platform\wince\gui_main.c" ^
     -o "%ROOT_DIR%bin\cegram_gui_x86ce.exe" ^
@@ -125,6 +128,7 @@ echo [*] Compiling CEgram CLI for Windows CE (x86 CEPC)...
     "%ROOT_DIR%src\core\rsa_keys.c" ^
     "%ROOT_DIR%src\core\aes.c" ^
     "%ROOT_DIR%src\core\tl.c" ^
+    "%ROOT_DIR%src\core\tinf.c" ^
     "%ROOT_DIR%src\core\mtproto.c" ^
     "%ROOT_DIR%src\platform\cli\main.c" ^
     -o "%ROOT_DIR%bin\cegram_cli_x86ce.exe" ^

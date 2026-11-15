@@ -59,7 +59,9 @@ static void char_to_tchar(const char *src, TCHAR *dst, size_t max_len) {
 #ifdef UNICODE
     MultiByteToWideChar(CP_UTF8, 0, src, -1, dst, (int)max_len);
 #else
-    strncpy(dst, src, max_len);
+    wchar_t wtmp[2048];
+    MultiByteToWideChar(CP_UTF8, 0, src, -1, wtmp, 2048);
+    WideCharToMultiByte(CP_ACP, 0, wtmp, -1, dst, (int)max_len, NULL, NULL);
     dst[max_len - 1] = '\0';
 #endif
 }
@@ -68,7 +70,9 @@ static void tchar_to_char(const TCHAR *src, char *dst, size_t max_len) {
 #ifdef UNICODE
     WideCharToMultiByte(CP_UTF8, 0, src, -1, dst, (int)max_len, NULL, NULL);
 #else
-    strncpy(dst, src, max_len);
+    wchar_t wtmp[2048];
+    MultiByteToWideChar(CP_ACP, 0, src, -1, wtmp, 2048);
+    WideCharToMultiByte(CP_UTF8, 0, wtmp, -1, dst, (int)max_len, NULL, NULL);
     dst[max_len - 1] = '\0';
 #endif
 }
@@ -631,7 +635,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     if (!hwnd) return 1;
 
+    if (nCmdShow == 0) nCmdShow = SW_SHOWNORMAL;
     ShowWindow(hwnd, nCmdShow);
+    SetForegroundWindow(hwnd);
     UpdateWindow(hwnd);
 
     while (GetMessage(&msg, NULL, 0, 0)) {

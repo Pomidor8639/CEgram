@@ -1,5 +1,6 @@
 #include "cegram/mtproto.h"
 #include "cegram/mini-gmp.h"
+#include "cegram/tinf.h"
 #include <time.h>
 #include <stdio.h>
 
@@ -658,6 +659,48 @@ int cegram_mtproto_recv_encrypted(cegram_transport_t *t,
     return CEGRAM_OK;
 }
 
+static int cegram_mtproto_decompress_if_gzip(uint8_t *out_resp, size_t max_resp_len, size_t *out_resp_len) {
+    while (*out_resp_len >= 8) {
+        uint32_t ctor = 0;
+        memcpy(&ctor, out_resp, 4);
+        if (ctor != TG_CONSTRUCTOR_GZIP_PACKED) {
+            break;
+        }
+
+        size_t off = 4;
+        uint8_t first = out_resp[off++];
+        size_t gz_len = 0;
+        if (first < 254) {
+            gz_len = first;
+        } else if (first == 254) {
+            if (off + 3 > *out_resp_len) return CEGRAM_ERR_SCHEMA;
+            gz_len = (size_t)out_resp[off] | ((size_t)out_resp[off + 1] << 8) | ((size_t)out_resp[off + 2] << 16);
+            off += 3;
+        } else {
+            return CEGRAM_ERR_SCHEMA;
+        }
+
+        if (off + gz_len > *out_resp_len) {
+            return CEGRAM_ERR_SCHEMA;
+        }
+
+        uint8_t *unpacked = (uint8_t *)malloc(max_resp_len);
+        if (!unpacked) return CEGRAM_ERR_GENERIC;
+
+        unsigned int unp_len = (unsigned int)max_resp_len;
+        int zres = tinf_gzip_uncompress(unpacked, &unp_len, out_resp + off, (unsigned int)gz_len);
+        if (zres != TINF_OK) {
+            free(unpacked);
+            return CEGRAM_ERR_SCHEMA;
+        }
+
+        memcpy(out_resp, unpacked, (size_t)unp_len);
+        *out_resp_len = (size_t)unp_len;
+        free(unpacked);
+    }
+    return CEGRAM_OK;
+}
+
 int cegram_mtproto_invoke(cegram_transport_t *t,
                           cegram_session_t *session,
                           const uint8_t *req_payload,
@@ -721,7 +764,7 @@ int cegram_mtproto_invoke(cegram_transport_t *t,
                     if (result_len > max_resp_len) return CEGRAM_ERR_BUFFER_TOO_SMALL;
                     memcpy(out_resp, resp_buf + 12, result_len);
                     *out_resp_len = result_len;
-                    return CEGRAM_OK;
+                    return cegram_mtproto_decompress_if_gzip(out_resp, max_resp_len, out_resp_len);
                 }
                 continue;
             }
@@ -767,7 +810,7 @@ int cegram_mtproto_invoke(cegram_transport_t *t,
                     off += inner_bytes;
                 }
                 if (need_resend) break;
-                if (found_result) return CEGRAM_OK;
+                if (found_result) return cegram_mtproto_decompress_if_gzip(out_resp, max_resp_len, out_resp_len);
                 continue;
             }
 
@@ -775,7 +818,7 @@ int cegram_mtproto_invoke(cegram_transport_t *t,
                 if (resp_len > max_resp_len) return CEGRAM_ERR_BUFFER_TOO_SMALL;
                 memcpy(out_resp, resp_buf, resp_len);
                 *out_resp_len = resp_len;
-                return CEGRAM_OK;
+                return cegram_mtproto_decompress_if_gzip(out_resp, max_resp_len, out_resp_len);
             }
         }
 
@@ -1151,7 +1194,7 @@ int cegram_messages_get_history(cegram_transport_t *t,
     for (scan = 4; scan + 4 <= resp_len && parsed < max_messages; scan += 4) {
         uint32_t tag = 0;
         memcpy(&tag, resp + scan, 4);
-        if (tag == TG_CONSTRUCTOR_MESSAGE) {
+        if (tag == TG_CONSTRUCTOR_MESSAGE || tag == TG_CONSTRUCTOR_MESSAGE_L184) {
             off = scan + 4;
             uint32_t mflags = 0;
             uint32_t mflags2 = 0;
@@ -1299,7 +1342,7 @@ int cegram_messages_get_dialogs(cegram_transport_t *t,
     for (scan = 4; scan + 4 <= resp_len && parsed < max_dialogs; scan += 4) {
         uint32_t tag = 0;
         memcpy(&tag, resp + scan, 4);
-        if (tag == TG_CONSTRUCTOR_DIALOG) {
+        if (tag == TG_CONSTRUCTOR_DIALOG || tag == TG_CONSTRUCTOR_DIALOG_OLD || tag == TG_CONSTRUCTOR_DIALOG_FOLDER || tag == 0xd58a08c6 || tag == 0x71bd1460) {
             off = scan + 4;
             uint32_t dflags = 0;
             uint32_t peer_ctor = 0;
@@ -1322,7 +1365,7 @@ int cegram_messages_get_dialogs(cegram_transport_t *t,
                 peer_type = CEGRAM_PEER_USER;
             } else if (peer_ctor == TG_CONSTRUCTOR_PEER_CHAT || peer_ctor == TG_CONSTRUCTOR_PEER_CHAT_OLD) {
                 peer_type = CEGRAM_PEER_CHAT;
-            } else if (peer_ctor == TG_CONSTRUCTOR_PEER_CHANNEL || peer_ctor == TG_CONSTRUCTOR_PEER_CHANNEL_OLD) {
+            } else if (peer_ctor == TG_CONSTRUCTOR_PEER_CHANNEL || peer_ctor == TG_CONSTRUCTOR_PEER_CHANNEL_OLD || peer_ctor == 0xa2a5371e) {
                 peer_type = CEGRAM_PEER_CHANNEL;
             }
 
@@ -1333,7 +1376,9 @@ int cegram_messages_get_dialogs(cegram_transport_t *t,
                 out_dialogs[parsed].unread_count = unread;
                 out_dialogs[parsed].date = 0;
                 out_dialogs[parsed].last_message[0] = '\0';
-                if (peer_type == CEGRAM_PEER_USER) {
+                if (peer_id == 777000) {
+                    snprintf(out_dialogs[parsed].title, sizeof(out_dialogs[parsed].title), "Telegram");
+                } else if (peer_type == CEGRAM_PEER_USER) {
                     snprintf(out_dialogs[parsed].title, sizeof(out_dialogs[parsed].title), "User %llu", (unsigned long long)peer_id);
                 } else if (peer_type == CEGRAM_PEER_CHANNEL) {
                     snprintf(out_dialogs[parsed].title, sizeof(out_dialogs[parsed].title), "Channel %llu", (unsigned long long)peer_id);
