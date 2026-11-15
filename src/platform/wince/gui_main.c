@@ -77,6 +77,20 @@ static void tchar_to_char(const TCHAR *src, char *dst, size_t max_len) {
 #endif
 }
 
+static void normalize_phone(const char *src, char *dst, size_t max_len) {
+    size_t i = 0, j = 0;
+    if (src[0] == '+') {
+        dst[j++] = '+';
+        i = 1;
+    }
+    for (; src[i] != '\0' && j + 1 < max_len; i++) {
+        if (src[i] >= '0' && src[i] <= '9') {
+            dst[j++] = src[i];
+        }
+    }
+    dst[j] = '\0';
+}
+
 static void set_status(const TCHAR *text) {
     if (g_hStatusLabel) {
         SetWindowText(g_hStatusLabel, text);
@@ -525,14 +539,15 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             if (wmId == IDC_LOGIN_SEND_CODE) {
                 TCHAR phone_w[64];
                 char phone_utf8[64];
+                char clean_phone[64];
                 cegram_auth_sent_code_t sent_code;
                 cegram_rpc_error_t err;
                 int res;
 
                 GetWindowText(g_hPhoneEdit, phone_w, sizeof(phone_w) / sizeof(TCHAR));
                 tchar_to_char(phone_w, phone_utf8, sizeof(phone_utf8));
-
-                strncpy(g_saved_phone, phone_utf8, sizeof(g_saved_phone));
+                normalize_phone(phone_utf8, clean_phone, sizeof(clean_phone));
+                strncpy(g_saved_phone, clean_phone, sizeof(g_saved_phone));
                 set_status(TEXT("Connecting to Telegram..."));
                 memset(&err, 0, sizeof(err));
                 memset(&sent_code, 0, sizeof(sent_code));
@@ -543,7 +558,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 }
 
                 set_status(TEXT("Sending verification code..."));
-                res = cegram_auth_send_code(&g_transport, &g_session, phone_utf8, CEGRAM_DEFAULT_API_ID, CEGRAM_DEFAULT_API_HASH, &sent_code, &err);
+                res = cegram_auth_send_code(&g_transport, &g_session, clean_phone, CEGRAM_DEFAULT_API_ID, CEGRAM_DEFAULT_API_HASH, &sent_code, &err);
                 if (res != CEGRAM_OK && err.error_code == 303 && strncmp(err.error_message, "PHONE_MIGRATE_", 14) == 0) {
                     int target_dc = atoi(err.error_message + 14);
                     set_status(TEXT("Migrating to another DC..."));
@@ -551,7 +566,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     if (init_network_and_handshake(target_dc) == CEGRAM_OK) {
                         memset(&err, 0, sizeof(err));
                         memset(&sent_code, 0, sizeof(sent_code));
-                        res = cegram_auth_send_code(&g_transport, &g_session, phone_utf8, CEGRAM_DEFAULT_API_ID, CEGRAM_DEFAULT_API_HASH, &sent_code, &err);
+                        res = cegram_auth_send_code(&g_transport, &g_session, clean_phone, CEGRAM_DEFAULT_API_ID, CEGRAM_DEFAULT_API_HASH, &sent_code, &err);
                     }
                 }
 

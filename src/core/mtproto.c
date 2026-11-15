@@ -856,10 +856,11 @@ int cegram_auth_send_code(cegram_transport_t *t,
     cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, settings_ctor);
     cegram_tl_write_uint32(raw_req, sizeof(raw_req), &raw_len, settings_flags);
 
-    cegram_tl_write_uint32(req, sizeof(req), &req_len, TG_CONSTRUCTOR_INVOKE_WITH_LAYER);
-    cegram_tl_write_uint32(req, sizeof(req), &req_len, 184);
-    memcpy(req + req_len, raw_req, raw_len);
-    req_len += raw_len;
+    res = cegram_mtproto_wrap_init_connection(req, sizeof(req), &req_len,
+                                              184, api_id,
+                                              "PC 64bit", "Windows 10", "5.0.0", "en",
+                                              raw_req, raw_len);
+    if (res != CEGRAM_OK) return res;
 
     res = cegram_mtproto_invoke(t, session, req, req_len, resp, sizeof(resp), &resp_len);
     if (res != CEGRAM_OK) return res;
@@ -934,10 +935,11 @@ int cegram_auth_sign_in(cegram_transport_t *t,
     cegram_tl_write_string(raw_req, sizeof(raw_req), &raw_len, phone_code_hash);
     cegram_tl_write_string(raw_req, sizeof(raw_req), &raw_len, phone_code);
 
-    cegram_tl_write_uint32(req, sizeof(req), &req_len, TG_CONSTRUCTOR_INVOKE_WITH_LAYER);
-    cegram_tl_write_uint32(req, sizeof(req), &req_len, 184);
-    memcpy(req + req_len, raw_req, raw_len);
-    req_len += raw_len;
+    res = cegram_mtproto_wrap_init_connection(req, sizeof(req), &req_len,
+                                              184, 2040,
+                                              "PC 64bit", "Windows 10", "5.0.0", "en",
+                                              raw_req, raw_len);
+    if (res != CEGRAM_OK) return res;
 
     res = cegram_mtproto_invoke(t, session, req, req_len, resp, sizeof(resp), &resp_len);
     if (res != CEGRAM_OK) return res;
