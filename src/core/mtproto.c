@@ -936,7 +936,7 @@ int cegram_auth_sign_in(cegram_transport_t *t,
     cegram_tl_write_string(raw_req, sizeof(raw_req), &raw_len, phone_code);
 
     res = cegram_mtproto_wrap_init_connection(req, sizeof(req), &req_len,
-                                              184, 2040,
+                                              184, CEGRAM_DEFAULT_API_ID,
                                               "PC 64bit", "Windows 10", "5.0.0", "en",
                                               raw_req, raw_len);
     if (res != CEGRAM_OK) return res;

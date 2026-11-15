@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
     size_t init_req_len = 0;
 
     cegram_mtproto_wrap_init_connection(init_req, sizeof(init_req), &init_req_len,
-                                        184, 2040, "CEgram WinCE", "Windows CE 6.0", "1.0.0", "en",
+                                        184, CEGRAM_DEFAULT_API_ID, "CEgram WinCE", "Windows CE 6.0", "1.0.0", "en",
                                         (const uint8_t *)&req_get_nearest_dc, 4);
 
     print_hex("[*] init_req bytes", init_req, init_req_len);
